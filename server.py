@@ -22,7 +22,10 @@ from resume.analyzer import analyze_resume_profile
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder="public", static_url_path="")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PUBLIC_DIR = os.path.join(BASE_DIR, "public")
+
+app = Flask(__name__, static_folder=PUBLIC_DIR, static_url_path="")
 CORS(app)
 
 LAST_CRAWL_TIMESTAMP = 0
@@ -54,13 +57,13 @@ def load_jobs_data() -> dict:
 
 @app.route("/")
 def serve_index():
-    return send_from_directory("public", "index.html")
+    return send_from_directory(PUBLIC_DIR, "index.html")
 
 @app.route("/<path:path>")
 def serve_static(path):
-    if os.path.exists(os.path.join("public", path)):
-        return send_from_directory("public", path)
-    return send_from_directory("public", "index.html")
+    if os.path.exists(os.path.join(PUBLIC_DIR, path)):
+        return send_from_directory(PUBLIC_DIR, path)
+    return send_from_directory(PUBLIC_DIR, "index.html")
 
 # -------------------------------------------------------------------
 # API ENDPOINTS
