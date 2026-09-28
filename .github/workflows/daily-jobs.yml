@@ -42,11 +42,15 @@ jobs:
 
       - name: Commit and Push Updated Dataset
         run: |
+          # Keep public/data/jobs.json in sync with data/jobs.json (for static Vercel hosting)
+          mkdir -p public/data
+          cp data/jobs.json public/data/jobs.json
+
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/jobs.json
+          git add data/jobs.json public/data/jobs.json
           if git diff --staged --quiet; then
-            echo "No changes in data/jobs.json to commit."
+            echo "No changes in dataset to commit."
           else
             git commit -m "auto: daily refresh of verified tech jobs dataset [skip ci]"
             git push

@@ -115,27 +115,98 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------------
   // JOBS LOADING & RENDERING
   // -------------------------------------------------------------------
+
+  function computeDateGroups(jobs) {
+    const today = [];
+    const thisWeek = [];
+    const thisMonth = [];
+    const unspecified = [];
+    const now = new Date();
+
+    jobs.forEach(j => {
+      const posted = j.postedAt;
+      if (!posted || posted === "Not specified") {
+        unspecified.push(j);
+        return;
+      }
+      try {
+        const cleanDate = String(posted).split("T")[0].split(" ")[0];
+        const pdate = new Date(cleanDate + "T00:00:00Z");
+        const diffDays = Math.floor((now - pdate) / (1000 * 60 * 60 * 24));
+        if (diffDays <= 1) { today.push(j); thisWeek.push(j); thisMonth.push(j); }
+        else if (diffDays <= 7) { thisWeek.push(j); thisMonth.push(j); }
+        else if (diffDays <= 30) { thisMonth.push(j); }
+        else { unspecified.push(j); }
+      } catch (_) {
+        unspecified.push(j);
+      }
+    });
+    return { today, thisWeek, thisMonth, unspecified };
+  }
+
+  function applyJobsData(data) {
+    allJobs = data.jobs || [];
+    groupedJobs = computeDateGroups(allJobs);
+
+    const meta = data.metadata || {};
+    if (lblLastUpdated) lblLastUpdated.textContent = meta.lastSuccessfulUpdate || "Not specified";
+    if (lblDatasetStats) lblDatasetStats.textContent = `${allJobs.length} Verified Jobs`;
+
+    const countAll = document.getElementById("count-all");
+    const countToday = document.getElementById("count-today");
+    const countWeek = document.getElementById("count-week");
+    const countMonth = document.getElementById("count-month");
+    if (countAll) countAll.textContent = allJobs.length;
+    if (countToday) countToday.textContent = groupedJobs.today.length;
+    if (countWeek) countWeek.textContent = groupedJobs.thisWeek.length;
+    if (countMonth) countMonth.textContent = groupedJobs.thisMonth.length;
+
+    renderJobsFeed();
+    renderProfileSummary();
+  }
+
   async function loadJobs() {
+    // Show loading state
+    if (jobsGridContainer) {
+      jobsGridContainer.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text-secondary);">
+          <div style="font-size:2rem;margin-bottom:0.75rem;">🔄</div>
+          <p style="font-size:1rem;font-weight:600;">Loading verified tech jobs...</p>
+        </div>`;
+    }
+
+    // Try 1: Fetch from /data/jobs.json (static file — works on Vercel & GitHub Pages)
+    try {
+      const resp = await fetch("/data/jobs.json");
+      if (resp.ok) {
+        const data = await resp.json();
+        applyJobsData(data);
+        return;
+      }
+    } catch (_) {}
+
+    // Try 2: Fetch from Flask API backend (works on Render, Railway, Docker, local dev)
     try {
       const resp = await fetch("/api/jobs");
-      const data = await resp.json();
-      allJobs = data.jobs || [];
-      groupedJobs = data.grouped || { today: [], thisWeek: [], thisMonth: [], unspecified: [] };
-      
-      const meta = data.metadata || {};
-      if (lblLastUpdated) lblLastUpdated.textContent = meta.lastSuccessfulUpdate || "Not specified";
-      if (lblDatasetStats) lblDatasetStats.textContent = `${meta.totalValidJobs || 0} Verified Jobs (${meta.duplicatesRemoved || 0} Dupes Removed)`;
+      if (resp.ok) {
+        const data = await resp.json();
+        applyJobsData(data);
+        return;
+      }
+    } catch (_) {}
 
-      document.getElementById("count-all").textContent = allJobs.length;
-      document.getElementById("count-today").textContent = (groupedJobs.today || []).length;
-      document.getElementById("count-week").textContent = (groupedJobs.thisWeek || []).length;
-      document.getElementById("count-month").textContent = (groupedJobs.thisMonth || []).length;
-
-      renderJobsFeed();
-      renderProfileSummary();
-    } catch (e) {
-      console.error("Error loading jobs:", e);
-      jobsGridContainer.innerHTML = `<div class="empty-state"><p>Failed to load jobs dataset.</p></div>`;
+    // All sources failed
+    console.error("Could not load jobs from any source.");
+    if (jobsGridContainer) {
+      jobsGridContainer.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:3rem;">
+          <div style="font-size:2.5rem;margin-bottom:1rem;">⚠️</div>
+          <p style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:0.5rem;">Could not load jobs dataset</p>
+          <p style="color:var(--text-secondary);font-size:0.9rem;">Please refresh the page or check your connection.</p>
+          <button onclick="loadJobs()" style="margin-top:1rem;padding:0.6rem 1.5rem;background:var(--accent-gradient);border:none;border-radius:var(--radius-md);color:#fff;font-weight:600;cursor:pointer;">
+            🔄 Retry
+          </button>
+        </div>`;
     }
   }
 
@@ -291,19 +362,117 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+
   // -------------------------------------------------------------------
   // RECOMMENDED JOBS
   // -------------------------------------------------------------------
   function renderRecommendedJobs() {
     const container = document.getElementById("recommended-grid-container");
-    const sorted = [...allJobs].map(j => {
-      j._matchScore = calculateMatch(j);
-      return j;
-    }).sort((a, b) => b._matchScore - a._matchScore);
+    if (!container) return;
 
-    container.innerHTML = sorted.map(j => renderJobCard(j)).join("");
+    if (allJobs.length === 0) {
+      container.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text-secondary);">
+          <div style="font-size:2.5rem;margin-bottom:1rem;">📭</div>
+          <p style="font-size:1rem;font-weight:600;">No jobs loaded yet. Go to Explore Jobs first.</p>
+        </div>`;
+      return;
+    }
+
+    const candSkillsSet = new Set((candidateProfile.skills || []).map(s => s.toLowerCase()));
+    const prefRoles = (candidateProfile.preferredRoles || []).map(r => r.toLowerCase());
+    const prefLocs = (candidateProfile.preferredLocations || []).map(l => l.toLowerCase());
+
+    const scored = allJobs.map(j => {
+      const reqSkills = j.requiredSkills || [];
+      const prefSkills = j.preferredSkills || [];
+
+      // Skill match (50 pts)
+      const reqMatched = reqSkills.filter(s => candSkillsSet.has(s.toLowerCase())).length;
+      const prefMatched = prefSkills.filter(s => candSkillsSet.has(s.toLowerCase())).length;
+      const skillScore = reqSkills.length > 0
+        ? Math.round((reqMatched / reqSkills.length) * 40 + (prefSkills.length > 0 ? (prefMatched / prefSkills.length) * 10 : 5))
+        : 30;
+
+      // Role match (20 pts)
+      const titleLower = (j.title || "").toLowerCase();
+      const roleScore = prefRoles.some(r => titleLower.includes(r) || r.includes(titleLower.split(" ")[0])) ? 20 : 0;
+
+      // Location match (15 pts)
+      const locLower = (j.location || "").toLowerCase();
+      const locScore = prefLocs.some(l => locLower.includes(l)) ? 15 : (locLower.includes("india") ? 5 : 0);
+
+      // Recency bonus (15 pts)
+      let recencyScore = 0;
+      try {
+        const cleanDate = String(j.postedAt || "").split("T")[0];
+        const diffDays = Math.floor((new Date() - new Date(cleanDate + "T00:00:00Z")) / (1000*60*60*24));
+        if (diffDays <= 1) recencyScore = 15;
+        else if (diffDays <= 7) recencyScore = 10;
+        else if (diffDays <= 30) recencyScore = 5;
+      } catch (_) {}
+
+      const totalScore = Math.min(98, Math.max(30, skillScore + roleScore + locScore + recencyScore));
+      return { ...j, _matchScore: totalScore, _reqMatched: reqMatched, _reqTotal: reqSkills.length };
+    }).sort((a, b) => b._matchScore - a._matchScore).slice(0, 12);
+
+    container.innerHTML = scored.map(job => {
+      const isSaved = savedJobIds.includes(job.id);
+      const reqSkills = job.requiredSkills || [];
+      const candSkills = (candidateProfile.skills || []).map(s => s.toLowerCase());
+      const matchingChips = reqSkills.filter(s => candSkills.includes(s.toLowerCase()));
+      const missingChips = reqSkills.filter(s => !candSkills.includes(s.toLowerCase()));
+      const score = job._matchScore;
+      const scoreColor = score >= 80 ? "var(--accent-cyan)" : score >= 60 ? "#f59e0b" : "#ef4444";
+
+      return `
+        <div class="card job-card" data-id="${job.id}">
+          <div>
+            <div class="job-card-header">
+              <div>
+                <h3 class="job-title">${escapeHtml(job.title)}</h3>
+                <div class="job-company">${escapeHtml(job.company)}</div>
+              </div>
+              <div class="match-pill ${score < 75 ? 'medium' : ''}" style="background:${scoreColor}15;border:1px solid ${scoreColor};color:${scoreColor};">
+                ${score}% MATCH
+              </div>
+            </div>
+
+            <div class="job-meta-list" style="margin-top:0.6rem;margin-bottom:0.6rem;">
+              <span class="job-meta-item">📍 ${escapeHtml(job.location)}</span>
+              <span class="job-meta-item">💼 ${escapeHtml(job.workMode)}</span>
+              <span class="job-meta-item">⏱️ ${escapeHtml(job.experienceRequirement)}</span>
+              <span class="job-meta-item">📅 ${escapeHtml(job.postedAt)}</span>
+            </div>
+
+            <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.5rem;">
+              ✅ ${matchingChips.length}/${reqSkills.length} skills matched
+              ${missingChips.length > 0 ? ` · Missing: <span style="color:#f59e0b">${missingChips.slice(0,3).map(s => escapeHtml(s)).join(", ")}</span>` : ' · <span style="color:var(--accent-cyan)">All required skills matched!</span>'}
+            </div>
+
+            <div class="skills-list">
+              ${matchingChips.map(s => `<span class="skill-chip">✓ ${escapeHtml(s)}</span>`).join("")}
+              ${missingChips.slice(0,3).map(s => `<span class="skill-chip missing">△ ${escapeHtml(s)}</span>`).join("")}
+            </div>
+          </div>
+
+          <div class="job-card-footer">
+            <span class="source-badge">via ${escapeHtml(job.source)}</span>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+              <button class="btn btn-secondary btn-sm btn-bookmark" data-id="${job.id}">
+                ${isSaved ? '★ Saved' : '☆ Save'}
+              </button>
+              <a href="${escapeHtml(job.sourceUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">
+                Apply Now ↗
+              </a>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+
     attachCardListeners();
   }
+
 
   // -------------------------------------------------------------------
   // RESUME PARSER & ANALYZER
