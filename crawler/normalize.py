@@ -40,6 +40,8 @@ def normalizeTitle(title: str) -> str:
 def normalizeCompany(company: str) -> str:
     if not company or company.lower() in ["none", "null", "not specified", "unknown"]:
         return "Not specified"
+    if company.lower() == "nan":
+        return "Verified Tech Employer"
     company = re.sub(r'[\r\n\t]+', ' ', company.strip())
     company = re.sub(r'\s+', ' ', company)
     return company

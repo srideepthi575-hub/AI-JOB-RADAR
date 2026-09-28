@@ -139,11 +139,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  const LOCATION_ALIASES = {
+    bengaluru: ["bengaluru", "bangalore", "ka", "karnataka", "india"],
+    hyderabad: ["hyderabad", "ts", "telangana", "ap", "andhra", "india"],
+    pune: ["pune", "mh", "maharashtra", "india"],
+    mumbai: ["mumbai", "mh", "maharashtra", "india"],
+    noida: ["noida", "gurugram", "gurgaon", "delhi", "ncr", "up", "hr", "dl", "india"],
+    remote: ["remote", "work from home"]
+  };
+
   function renderJobsFeed() {
     let dataset = allJobs;
-    if (activeDateGroup === "today") dataset = groupedJobs.today || [];
-    if (activeDateGroup === "thisWeek") dataset = groupedJobs.thisWeek || [];
-    if (activeDateGroup === "thisMonth") dataset = groupedJobs.thisMonth || [];
+    if (activeDateGroup === "today") {
+      dataset = (groupedJobs.today && groupedJobs.today.length > 0) ? groupedJobs.today : allJobs;
+    } else if (activeDateGroup === "thisWeek") {
+      dataset = (groupedJobs.thisWeek && groupedJobs.thisWeek.length > 0) ? groupedJobs.thisWeek : allJobs;
+    } else if (activeDateGroup === "thisMonth") {
+      dataset = (groupedJobs.thisMonth && groupedJobs.thisMonth.length > 0) ? groupedJobs.thisMonth : allJobs;
+    }
 
     const query = searchInput.value.trim().toLowerCase();
     const role = filterRole.value.toLowerCase();
@@ -158,11 +171,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const text = `${job.title} ${job.company} ${job.location} ${job.description} ${(job.requiredSkills || []).join(" ")}`.toLowerCase();
         if (!text.includes(query)) return false;
       }
-      if (role !== "all" && !job.title.toLowerCase().includes(role)) return false;
-      if (location !== "all" && !job.location.toLowerCase().includes(location)) return false;
-      if (workMode !== "all" && !job.workMode.toLowerCase().includes(workMode)) return false;
-      if (jobType !== "all" && !job.jobType.toLowerCase().includes(jobType)) return false;
-      if (source !== "all" && !job.source.toLowerCase().includes(source)) return false;
+      if (role !== "all" && !(job.title || "").toLowerCase().includes(role)) return false;
+
+      // Location matching with State & City Aliases
+      if (location !== "all") {
+        const jobLoc = (job.location || "").toLowerCase();
+        const aliases = LOCATION_ALIASES[location] || [location];
+        if (!aliases.some(a => jobLoc.includes(a))) return false;
+      }
+
+      if (workMode !== "all" && !(job.workMode || "").toLowerCase().includes(workMode)) return false;
+      if (jobType !== "all" && !(job.jobType || "").toLowerCase().includes(jobType)) return false;
+      if (source !== "all" && !(job.source || "").toLowerCase().includes(source)) return false;
 
       // Match Score calculation
       const matchScore = calculateMatch(job);

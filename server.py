@@ -69,6 +69,15 @@ def serve_static(path):
 # API ENDPOINTS
 # -------------------------------------------------------------------
 
+LOCATION_ALIASES = {
+    "bengaluru": ["bengaluru", "bangalore", "ka", "karnataka", "india"],
+    "hyderabad": ["hyderabad", "ts", "telangana", "ap", "andhra", "india"],
+    "pune": ["pune", "mh", "maharashtra", "india"],
+    "mumbai": ["mumbai", "mh", "maharashtra", "india"],
+    "noida": ["noida", "gurugram", "gurgaon", "delhi", "ncr", "up", "hr", "dl", "india"],
+    "remote": ["remote", "work from home"]
+}
+
 @app.route("/api/jobs", methods=["GET"])
 def get_jobs():
     data = load_jobs_data()
@@ -99,9 +108,11 @@ def get_jobs():
             if role not in j.get("title", "").lower():
                 continue
 
-        # Location Filter
+        # Location Filter with State & City Aliases
         if location and location != "all":
-            if location not in j.get("location", "").lower():
+            job_loc = j.get("location", "").lower()
+            aliases = LOCATION_ALIASES.get(location, [location])
+            if not any(a in job_loc for a in aliases):
                 continue
 
         # Work Mode Filter
@@ -134,12 +145,13 @@ def get_jobs():
 
     for j in filtered:
         posted = j.get("postedAt", "Not specified")
-        if posted == "Not specified":
+        if not posted or posted == "Not specified":
             unspecified_date_jobs.append(j)
         else:
             try:
-                pdate = datetime.datetime.strptime(posted, "%Y-%m-%d")
-                delta_days = (now - pdate).days
+                clean_date_str = str(posted).split("T")[0].split(" ")[0]
+                pdate = datetime.datetime.strptime(clean_date_str, "%Y-%m-%d")
+                delta_days = (now.date() - pdate.date()).days
                 if delta_days <= 1:
                     today_jobs.append(j)
                     this_week_jobs.append(j)
