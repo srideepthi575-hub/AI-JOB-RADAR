@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Radar — AI-Powered Job Discovery Platform for CSE/IT Freshers in India</title>
+  <meta name="description" content="AI-Powered Job Discovery platform for CSE/IT students, final-year students, recent graduates, freshers, and 0-2 years experience candidates in India. Discover real validated tech jobs with explainable AI match scores.">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Navbar -->
+    <header class="navbar">
+      <div class="brand-logo">
+        <div class="brand-icon">⚡</div>
+        <span>Job Radar</span>
+      </div>
+
+      <nav>
+        <ul class="nav-links">
+          <li class="nav-link active" data-tab="jobs-tab">Explore Jobs</li>
+          <li class="nav-link" data-tab="recommended-tab">Recommended</li>
+          <li class="nav-link" data-tab="resume-tab">Resume Analyzer</li>
+          <li class="nav-link" data-tab="jd-tab">JD Matcher</li>
+          <li class="nav-link" data-tab="skillgap-tab">Skill Gap</li>
+          <li class="nav-link" data-tab="insights-tab">Career Insights</li>
+          <li class="nav-link" data-tab="saved-tab">My Jobs (<span id="saved-count">0</span>)</li>
+          <li class="nav-link" data-tab="health-tab">Source Health</li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <button class="btn btn-secondary btn-sm" id="btn-manual-refresh">
+          <span>🔄</span> Refresh Jobs
+        </button>
+        <button class="btn btn-primary btn-sm" id="btn-open-resume-upload">
+          <span>📄</span> Upload Resume
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Body -->
+    <main class="main-content">
+
+      <!-- ==================================================================== -->
+      <!-- TAB 1: EXPLORE JOBS FEED -->
+      <!-- ==================================================================== -->
+      <section id="jobs-tab" class="tab-page">
+        <div class="page-header">
+          <h1 class="page-title">Find Your Next Opportunity</h1>
+          <p class="page-subtitle">AI-powered job discovery platform for CSE & IT students and freshers in India.</p>
+        </div>
+
+        <!-- Search & Filter Controls -->
+        <div class="search-filter-bar">
+          <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-input" class="search-input" placeholder="Search jobs, companies, required skills (e.g. Python, React, Data Analyst)...">
+          </div>
+
+          <div class="filters-row">
+            <select id="filter-role" class="filter-select">
+              <option value="all">All Roles</option>
+              <option value="software">Software Engineer</option>
+              <option value="frontend">Frontend Developer</option>
+              <option value="backend">Backend Developer</option>
+              <option value="full stack">Full Stack Developer</option>
+              <option value="python">Python Developer</option>
+              <option value="java">Java Developer</option>
+              <option value="data">Data Analyst</option>
+              <option value="qa">QA Engineer</option>
+              <option value="intern">Software Intern</option>
+            </select>
+
+            <select id="filter-location" class="filter-select">
+              <option value="all">All Locations</option>
+              <option value="bengaluru">Bengaluru</option>
+              <option value="chennai">Chennai</option>
+              <option value="hyderabad">Hyderabad</option>
+              <option value="pune">Pune</option>
+              <option value="mumbai">Mumbai</option>
+              <option value="noida">Noida / Gurugram</option>
+              <option value="remote">Remote</option>
+            </select>
+
+            <select id="filter-workmode" class="filter-select">
+              <option value="all">Work Mode (All)</option>
+              <option value="remote">Remote</option>
+              <option value="hybrid">Hybrid</option>
+              <option value="on-site">On-site</option>
+            </select>
+
+            <select id="filter-jobtype" class="filter-select">
+              <option value="all">Job Type (All)</option>
+              <option value="full-time">Full-time</option>
+              <option value="internship">Internship</option>
+            </select>
+
+            <select id="filter-source" class="filter-select">
+              <option value="all">All Sources</option>
+              <option value="jobspy">JobSpy (LinkedIn/Indeed)</option>
+              <option value="company">Company Feeds</option>
+              <option value="adzuna">Adzuna</option>
+              <option value="jooble">Jooble</option>
+            </select>
+
+            <select id="filter-minscore" class="filter-select">
+              <option value="0">Min AI Match: Any</option>
+              <option value="90">90%+ AI Match</option>
+              <option value="80">80%+ AI Match</option>
+              <option value="70">70%+ AI Match</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Date-wise Grouping Tabs -->
+        <div class="date-tabs">
+          <button class="tab-btn active" data-dategroup="all">All Jobs <span class="badge-count" id="count-all">0</span></button>
+          <button class="tab-btn" data-dategroup="today">Today <span class="badge-count" id="count-today">0</span></button>
+          <button class="tab-btn" data-dategroup="thisWeek">This Week <span class="badge-count" id="count-week">0</span></button>
+          <button class="tab-btn" data-dategroup="thisMonth">This Month <span class="badge-count" id="count-month">0</span></button>
+        </div>
+
+        <!-- System Pipeline Status Banner -->
+        <div id="dataset-status-banner" style="margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 0.6rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+          <div>
+            <span>📅 Last Dataset Update: <strong id="lbl-last-updated">Checking...</strong></span>
+            <span style="margin-left: 1rem;">🔄 Schedule: <strong>Daily Workflow</strong></span>
+          </div>
+          <span id="lbl-dataset-stats" style="color: var(--accent-cyan);">0 Verified Jobs</span>
+        </div>
+
+        <!-- Jobs Grid Container -->
+        <div id="jobs-grid-container" class="jobs-grid">
+          <!-- Rendered dynamically -->
+        </div>
+
+        <!-- Empty State Container -->
+        <div id="jobs-empty-state" class="empty-state" style="display: none;">
+          <div class="empty-icon">🔍</div>
+          <h3 class="empty-title">No Matching Jobs Found</h3>
+          <p class="empty-desc" id="lbl-empty-reason">No live job sources match your selected filters. Try expanding your location or clearing skill filters.</p>
+          <button class="btn btn-secondary btn-sm" id="btn-reset-filters">Reset All Filters</button>
+        </div>
+      </section>
+
+      <!-- ==================================================================== -->
+      <!-- TAB 2: RECOMMENDED FOR YOU -->
+      <!-- ==================================================================== -->
+      <section id="recommended-tab" class="tab-page" style="display: none;">
+        <div class="page-header">
+          <h1 class="page-title">Jobs Recommended For You</h1>
+          <p class="page-subtitle">Ranked by your deterministic AI match score based on your extracted resume profile.</p>
+        </div>
+
+        <div id="recommended-grid-container" class="jobs-grid">
+          <!-- Rendered dynamically -->
+        </div>
+      </section>
+
+      <!-- ==================================================================== -->
+      <!-- TAB 3: RESUME ANALYZER -->
+      <!-- ==================================================================== -->
+      <section id="resume-tab" class="tab-page" style="display: none;">
+        <div class="page-header">
+          <h1 class="page-title">AI Resume Analyzer</h1>
+          <p class="page-subtitle">Upload your PDF/DOCX resume to extract structured profile data and get grounded improvement feedback.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+          <!-- Left Column: Upload & Profile View -->
+          <div class="card">
+            <h3 style="margin-bottom: 1rem;">Upload Your Resume</h3>
+            <div id="dropzone" style="border: 2px dashed var(--border-accent); border-radius: var(--radius-md); padding: 2.5rem 1rem; text-align: center; background: rgba(99, 102, 241, 0.04); cursor: pointer;">
+              <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
+              <p style="font-weight: 600; margin-bottom: 0.2rem;">Click or drag PDF / DOCX resume here</p>
+              <p style="font-size: 0.8rem; color: var(--text-muted);">Max file size: 10MB. Files parsed securely on server.</p>
+              <input type="file" id="resume-file-input" accept=".pdf,.docx,.doc" style="display: none;">
+            </div>
+
+            <div style="margin-top: 1.5rem;">
+              <h4 style="margin-bottom: 0.5rem; color: var(--text-secondary);">Or Paste Resume Plain Text</h4>
+              <textarea id="resume-text-input" rows="6" style="width: 100%; background: rgba(18,26,43,0.9); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); padding: 0.75rem; font-family: inherit; font-size: 0.85rem; outline: none;" placeholder="Paste resume contents here..."></textarea>
+              <button class="btn btn-primary btn-sm" id="btn-analyze-pasted" style="margin-top: 0.75rem; width: 100%;">Analyze Resume Text</button>
+            </div>
+          </div>
+
+          <!-- Right Column: Extracted Profile Summary -->
+          <div class="card" id="extracted-profile-card">
+            <h3 style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <span>Extracted Candidate Profile</span>
+              <span id="lbl-profile-status" style="font-size: 0.8rem; color: var(--accent-emerald);">Active</span>
+            </h3>
+
+            <div id="profile-details-view">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Grounded AI Analysis Report Card -->
+        <div class="card" style="margin-top: 1.5rem;" id="resume-feedback-card">
+          <h3 style="margin-bottom: 1rem; color: var(--accent-cyan);">Grounded AI Resume Feedback</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+            <div>
+              <h4 style="color: var(--accent-emerald); margin-bottom: 0.5rem;">✓ Strengths Identified</h4>
+              <ul id="resume-strengths-list" style="list-style-type: none; font-size: 0.9rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.4rem;">
+                <li>Upload a resume to generate grounded strengths.</li>
+              </ul>
+            </div>
+            <div>
+              <h4 style="color: var(--accent-amber); margin-bottom: 0.5rem;">💡 Suggested Resume Improvements</h4>
+              <ul id="resume-improvements-list" style="list-style-type: none; font-size: 0.9rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.4rem;">
+                <li>Upload a resume to generate actionable improvement suggestions.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================================================================== -->
+      <!-- TAB 4: JOB DESCRIPTION ANALYZER -->
+      <!-- ==================================================================== -->
+      <section id="jd-tab" class="tab-page" style="display: none;">
+        <div class="page-header">
+          <h1 class="page-title">Job Description Matcher & Analyzer</h1>
+          <p class="page-subtitle">Paste any target Job Description to compare against your candidate resume in real-time.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+          <div class="card">
+            <h3 style="margin-bottom: 0.75rem;">Paste Job Description</h3>
+            <textarea id="jd-input-text" rows="12" style="width: 100%; background: rgba(18,26,43,0.9); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); padding: 0.75rem; font-family: inherit; font-size: 0.85rem; outline: none;" placeholder="Paste job description text from LinkedIn, Naukri, or company website..."></textarea>
+            <button class="btn btn-primary" id="btn-analyze-jd" style="margin-top: 1rem; width: 100%;">Calculate Deterministic Match & Analyze</button>
+          </div>
+
+          <div class="card" id="jd-analysis-result-card">
+            <h3 style="margin-bottom: 1rem;">Match Results & Breakdown</h3>
+            <div id="jd-result-body">
+              <p style="color: var(--text-muted); font-size: 0.9rem;">Paste a job description on the left and click analyze to calculate your match score.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================================================================== -->
+      <!-- TAB 5: SKILL GAP & WHAT SHOULD I LEARN -->
+      <!-- ==================================================================== -->
+      <section id="skillgap-tab" class="tab-page" style="display: none;">
+        <div class="page-header">
+          <h1 class="page-title">Your Skill Gap & Market Learning Priorities</h1>
+          <p class="page-subtitle">Calculated dynamically from the current collected real job dataset.</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3>Current Job Market Demands vs Your Profile</h3>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">Based on <strong id="lbl-skillgap-sample">0</strong> current verified jobs</span>
+          </div>
+          
+          <div id="skill-frequency-bars" style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <div class="page-header">
+          <h2 style="font-size: 1.3rem;">What Should I Learn?</h2>
+          <p class="page-subtitle">Recommended learning topics based on high-frequency missing skills in target roles.</p>
+        </div>
+
+        <div id="learning-cards-container" class="jobs-grid">
+          <!-- Rendered dynamically -->
+        </div>
+      </section>
+
+      <!-- ==================================================================== -->
+      <!-- TAB 6: CAREER INSIGHTS -->
+      <!-- ==================================================================== -->
+      <section id="insights-tab" class="tab-page" style="display: none;">
+        <div class="page-header">
+          <h1 class="page-title">CSE & IT Career Insights</h1>
+          <p class="page-subtitle">Dynamic data insights calculated strictly from verified active tech job postings in India.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem;">
+          <div class="card">
+            <h4 style="color: var(--accent-cyan); margin-bottom: 0.75rem;">🔥 Top Demanded Skills</h4>
+            <div id="insight-top-skills"><!-- Rendered dynamically --></div>
+          </div>
+
+          <div class="card">
+            <h4 style="color: var(--accent-indigo); margin-bottom: 0.75rem;">💼 Top Fresher Tech Roles</h4>
+            <div id="insight-top-roles"><!-- Rendered dynamically --></div>
+          </div>
+
+          <div class="card">
+            <h4 style="color: var(--accent-emerald); margin-bottom: 0.75rem;">📍 Top Indian Tech Hubs</h4>
+            <div id="insight-top-locations"><!-- Rendered dynamically --></div>
+          </div>
+
+          <div class="card">
+            <h4 style="color: var(--accent-amber); margin-bottom: 0.75rem;">🏢 Top Posting Companies</h4>
+            <div id="insight-top-companies"><!-- Rendered dynamically --></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================================================================== -->
+      <!-- TAB 7: SAVED JOBS -->
+      <!-- ==================================================================== -->
+      <section id="saved-tab" class="tab-page" style="display: none;">
+        <div class="page-header">
+          <h1 class="page-title">My Saved Jobs</h1>
+          <p class="page-subtitle">Track your bookmarked, applied, and interested opportunities.</p>
+        </div>
+
+        <div id="saved-jobs-grid" class="jobs-grid">
+          <!-- Rendered dynamically -->
+        </div>
+      </section>
+
+      <!-- ==================================================================== -->
+      <!-- TAB 8: SOURCE HEALTH & PIPELINE STATUS -->
+      <!-- ==================================================================== -->
+      <section id="health-tab" class="tab-page" style="display: none;">
+        <div class="page-header">
+          <h1 class="page-title">Source Adapters & Pipeline Status</h1>
+          <p class="page-subtitle">Transparent real-time status of configured job sources and pipeline execution.</p>
+        </div>
+
+        <div class="card">
+          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
+                <th style="padding: 0.75rem;">Source Name</th>
+                <th style="padding: 0.75rem;">Status</th>
+                <th style="padding: 0.75rem;">Fetched</th>
+                <th style="padding: 0.75rem;">Valid</th>
+                <th style="padding: 0.75rem;">Duplicates</th>
+                <th style="padding: 0.75rem;">Last Fetch</th>
+                <th style="padding: 0.75rem;">Message / Error</th>
+              </tr>
+            </thead>
+            <tbody id="health-table-body">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

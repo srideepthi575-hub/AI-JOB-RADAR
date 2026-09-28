@@ -1,0 +1,595 @@
+// Job Radar Platform Frontend Engine
+document.addEventListener("DOMContentLoaded", () => {
+  // Global State
+  let allJobs = [];
+  let groupedJobs = { today: [], thisWeek: [], thisMonth: [], unspecified: [] };
+  let candidateProfile = {
+    degree: "B.Tech CSE",
+    branch: "Computer Science",
+    graduationYear: "2026",
+    experience: "Fresher",
+    skills: ["Python", "Java", "JavaScript", "SQL", "Git", "HTML", "CSS"],
+    projects: ["E-commerce Web App", "Data Analysis Dashboard"],
+    preferredRoles: ["Software Developer", "Frontend Developer", "Python Developer"],
+    preferredLocations: ["Bengaluru", "Chennai", "Hyderabad", "Remote"],
+    preferredWorkMode: "Any"
+  };
+
+  let activeDateGroup = "all";
+  let savedJobIds = JSON.parse(localStorage.getItem("jobradar_saved_ids") || "[]");
+
+  // DOM Elements
+  const navLinks = document.querySelectorAll(".nav-link");
+  const tabPages = document.querySelectorAll(".tab-page");
+  
+  const jobsGridContainer = document.getElementById("jobs-grid-container");
+  const jobsEmptyState = document.getElementById("jobs-empty-state");
+  const lblLastUpdated = document.getElementById("lbl-last-updated");
+  const lblDatasetStats = document.getElementById("lbl-dataset-stats");
+  const lblSavedCount = document.getElementById("saved-count");
+
+  // Filter Elements
+  const searchInput = document.getElementById("search-input");
+  const filterRole = document.getElementById("filter-role");
+  const filterLocation = document.getElementById("filter-location");
+  const filterWorkMode = document.getElementById("filter-workmode");
+  const filterJobType = document.getElementById("filter-jobtype");
+  const filterSource = document.getElementById("filter-source");
+  const filterMinScore = document.getElementById("filter-minscore");
+  const btnResetFilters = document.getElementById("btn-reset-filters");
+  const btnManualRefresh = document.getElementById("btn-manual-refresh");
+
+  // Initial Setup
+  initNavigation();
+  initFilters();
+  initResumeDropzone();
+  initJdMatcher();
+  loadJobs();
+  loadSourceHealth();
+
+  // -------------------------------------------------------------------
+  // NAVIGATION
+  // -------------------------------------------------------------------
+  function initNavigation() {
+    navLinks.forEach(link => {
+      link.addEventListener("click", () => {
+        const targetTab = link.getAttribute("data-tab");
+        
+        navLinks.forEach(n => n.classList.remove("active"));
+        tabPages.forEach(p => p.style.display = "none");
+
+        link.classList.add("active");
+        const activePage = document.getElementById(targetTab);
+        if (activePage) activePage.style.display = "block";
+
+        if (targetTab === "recommended-tab") renderRecommendedJobs();
+        if (targetTab === "skillgap-tab") loadSkillGap();
+        if (targetTab === "insights-tab") loadInsights();
+        if (targetTab === "saved-tab") renderSavedJobs();
+        if (targetTab === "health-tab") loadSourceHealth();
+      });
+    });
+
+    document.querySelectorAll(".date-tabs .tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".date-tabs .tab-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        activeDateGroup = btn.getAttribute("data-dategroup");
+        renderJobsFeed();
+      });
+    });
+
+    if (btnResetFilters) {
+      btnResetFilters.addEventListener("click", () => {
+        searchInput.value = "";
+        filterRole.value = "all";
+        filterLocation.value = "all";
+        filterWorkMode.value = "all";
+        filterJobType.value = "all";
+        filterSource.value = "all";
+        filterMinScore.value = "0";
+        renderJobsFeed();
+      });
+    }
+
+    if (btnManualRefresh) {
+      btnManualRefresh.addEventListener("click", async () => {
+        btnManualRefresh.disabled = true;
+        btnManualRefresh.innerHTML = "<span>🔄</span> Refreshing...";
+        try {
+          const resp = await fetch("/api/crawl", { method: "POST" });
+          const res = await resp.json();
+          alert(res.message);
+          await loadJobs();
+          await loadSourceHealth();
+        } catch (err) {
+          alert("Refresh trigger error: " + err.message);
+        } finally {
+          btnManualRefresh.disabled = false;
+          btnManualRefresh.innerHTML = "<span>🔄</span> Refresh Jobs";
+        }
+      });
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // JOBS LOADING & RENDERING
+  // -------------------------------------------------------------------
+  async function loadJobs() {
+    try {
+      const resp = await fetch("/api/jobs");
+      const data = await resp.json();
+      allJobs = data.jobs || [];
+      groupedJobs = data.grouped || { today: [], thisWeek: [], thisMonth: [], unspecified: [] };
+      
+      const meta = data.metadata || {};
+      if (lblLastUpdated) lblLastUpdated.textContent = meta.lastSuccessfulUpdate || "Not specified";
+      if (lblDatasetStats) lblDatasetStats.textContent = `${meta.totalValidJobs || 0} Verified Jobs (${meta.duplicatesRemoved || 0} Dupes Removed)`;
+
+      document.getElementById("count-all").textContent = allJobs.length;
+      document.getElementById("count-today").textContent = (groupedJobs.today || []).length;
+      document.getElementById("count-week").textContent = (groupedJobs.thisWeek || []).length;
+      document.getElementById("count-month").textContent = (groupedJobs.thisMonth || []).length;
+
+      renderJobsFeed();
+      renderProfileSummary();
+    } catch (e) {
+      console.error("Error loading jobs:", e);
+      jobsGridContainer.innerHTML = `<div class="empty-state"><p>Failed to load jobs dataset.</p></div>`;
+    }
+  }
+
+  function renderJobsFeed() {
+    let dataset = allJobs;
+    if (activeDateGroup === "today") dataset = groupedJobs.today || [];
+    if (activeDateGroup === "thisWeek") dataset = groupedJobs.thisWeek || [];
+    if (activeDateGroup === "thisMonth") dataset = groupedJobs.thisMonth || [];
+
+    const query = searchInput.value.trim().toLowerCase();
+    const role = filterRole.value.toLowerCase();
+    const location = filterLocation.value.toLowerCase();
+    const workMode = filterWorkMode.value.toLowerCase();
+    const jobType = filterJobType.value.toLowerCase();
+    const source = filterSource.value.toLowerCase();
+    const minScore = parseInt(filterMinScore.value) || 0;
+
+    let filtered = dataset.filter(job => {
+      if (query) {
+        const text = `${job.title} ${job.company} ${job.location} ${job.description} ${(job.requiredSkills || []).join(" ")}`.toLowerCase();
+        if (!text.includes(query)) return false;
+      }
+      if (role !== "all" && !job.title.toLowerCase().includes(role)) return false;
+      if (location !== "all" && !job.location.toLowerCase().includes(location)) return false;
+      if (workMode !== "all" && !job.workMode.toLowerCase().includes(workMode)) return false;
+      if (jobType !== "all" && !job.jobType.toLowerCase().includes(jobType)) return false;
+      if (source !== "all" && !job.source.toLowerCase().includes(source)) return false;
+
+      // Match Score calculation
+      const matchScore = calculateMatch(job);
+      job._matchScore = matchScore;
+      if (minScore > 0 && matchScore < minScore) return false;
+
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      jobsGridContainer.style.display = "none";
+      jobsEmptyState.style.display = "block";
+    } else {
+      jobsEmptyState.style.display = "none";
+      jobsGridContainer.style.display = "grid";
+      jobsGridContainer.innerHTML = filtered.map(job => renderJobCard(job)).join("");
+      attachCardListeners();
+    }
+  }
+
+  function renderJobCard(job) {
+    const isSaved = savedJobIds.includes(job.id);
+    const score = job._matchScore || calculateMatch(job);
+    const reqSkills = job.requiredSkills || [];
+    
+    const candSkills = (candidateProfile.skills || []).map(s => s.toLowerCase());
+    const matchingChips = reqSkills.filter(s => candSkills.includes(s.toLowerCase()));
+    const missingChips = reqSkills.filter(s => !candSkills.includes(s.toLowerCase()));
+
+    return `
+      <div class="card job-card" data-id="${job.id}">
+        <div>
+          <div class="job-card-header">
+            <div>
+              <h3 class="job-title">${escapeHtml(job.title)}</h3>
+              <div class="job-company">${escapeHtml(job.company)}</div>
+            </div>
+            <div class="match-pill ${score < 75 ? 'medium' : ''}">
+              ${score}% AI MATCH
+            </div>
+          </div>
+
+          <div class="job-meta-list" style="margin-top: 0.6rem; margin-bottom: 0.75rem;">
+            <span class="job-meta-item">📍 ${escapeHtml(job.location)}</span>
+            <span class="job-meta-item">💼 ${escapeHtml(job.workMode)}</span>
+            <span class="job-meta-item">⏱️ ${escapeHtml(job.experienceRequirement)}</span>
+            <span class="job-meta-item">📅 Posted: ${escapeHtml(job.postedAt)}</span>
+          </div>
+
+          <div class="skills-list">
+            ${matchingChips.map(s => `<span class="skill-chip">✓ ${escapeHtml(s)}</span>`).join("")}
+            ${missingChips.map(s => `<span class="skill-chip missing">△ ${escapeHtml(s)}</span>`).join("")}
+          </div>
+        </div>
+
+        <div class="job-card-footer">
+          <span class="source-badge">Source: ${escapeHtml(job.source)}</span>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="btn btn-secondary btn-sm btn-bookmark" data-id="${job.id}">
+              ${isSaved ? '★ Saved' : '☆ Save'}
+            </button>
+            <a href="${escapeHtml(job.sourceUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">
+              Apply Now ↗
+            </a>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function calculateMatch(job) {
+    const candSkills = new Set((candidateProfile.skills || []).map(s => s.toLowerCase()));
+    const reqSkills = job.requiredSkills || [];
+    if (reqSkills.length === 0) return 75;
+
+    let matched = 0;
+    reqSkills.forEach(s => {
+      if (candSkills.has(s.toLowerCase())) matched++;
+    });
+
+    const skillFrac = matched / reqSkills.length;
+    const baseScore = Math.round(skillFrac * 40 + 45); // Deterministic base
+    return Math.min(98, Math.max(30, baseScore));
+  }
+
+  function attachCardListeners() {
+    document.querySelectorAll(".btn-bookmark").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-id");
+        if (savedJobIds.includes(id)) {
+          savedJobIds = savedJobIds.filter(i => i !== id);
+        } else {
+          savedJobIds.push(id);
+        }
+        localStorage.setItem("jobradar_saved_ids", JSON.stringify(savedJobIds));
+        lblSavedCount.textContent = savedJobIds.length;
+        renderJobsFeed();
+      });
+    });
+  }
+
+  function initFilters() {
+    [searchInput, filterRole, filterLocation, filterWorkMode, filterJobType, filterSource, filterMinScore].forEach(el => {
+      if (el) el.addEventListener("input", renderJobsFeed);
+    });
+  }
+
+  // -------------------------------------------------------------------
+  // RECOMMENDED JOBS
+  // -------------------------------------------------------------------
+  function renderRecommendedJobs() {
+    const container = document.getElementById("recommended-grid-container");
+    const sorted = [...allJobs].map(j => {
+      j._matchScore = calculateMatch(j);
+      return j;
+    }).sort((a, b) => b._matchScore - a._matchScore);
+
+    container.innerHTML = sorted.map(j => renderJobCard(j)).join("");
+    attachCardListeners();
+  }
+
+  // -------------------------------------------------------------------
+  // RESUME PARSER & ANALYZER
+  // -------------------------------------------------------------------
+  function initResumeDropzone() {
+    const dropzone = document.getElementById("dropzone");
+    const fileInput = document.getElementById("resume-file-input");
+    const btnAnalyzeText = document.getElementById("btn-analyze-pasted");
+    const textInput = document.getElementById("resume-text-input");
+
+    if (dropzone && fileInput) {
+      dropzone.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", async (e) => {
+        if (e.target.files.length > 0) {
+          const file = e.target.files[0];
+          const formData = new FormData();
+          formData.append("file", file);
+
+          dropzone.innerHTML = `<p>⏳ Parsing ${escapeHtml(file.name)}...</p>`;
+          try {
+            const resp = await fetch("/api/resume/parse", { method: "POST", body: formData });
+            const data = await resp.json();
+            if (data.status === "success") {
+              candidateProfile = data.profile;
+              await updateResumeFeedback();
+              renderProfileSummary();
+              renderJobsFeed();
+              alert("Resume parsed successfully!");
+            }
+          } catch (err) {
+            alert("Error parsing resume: " + err.message);
+          } finally {
+            dropzone.innerHTML = `
+              <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
+              <p style="font-weight: 600; margin-bottom: 0.2rem;">Click or drag PDF / DOCX resume here</p>
+              <p style="font-size: 0.8rem; color: var(--text-muted);">Max file size: 10MB.</p>
+            `;
+          }
+        }
+      });
+    }
+
+    if (btnAnalyzeText) {
+      btnAnalyzeText.addEventListener("click", async () => {
+        const text = textInput.value.trim();
+        if (!text) return alert("Please enter resume text.");
+
+        try {
+          const resp = await fetch("/api/resume/parse", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text })
+          });
+          const data = await resp.json();
+          if (data.status === "success") {
+            candidateProfile = data.profile;
+            await updateResumeFeedback();
+            renderProfileSummary();
+            renderJobsFeed();
+            alert("Resume text analyzed!");
+          }
+        } catch (err) {
+          alert("Error: " + err.message);
+        }
+      });
+    }
+  }
+
+  function renderProfileSummary() {
+    const view = document.getElementById("profile-details-view");
+    if (!view) return;
+
+    view.innerHTML = `
+      <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.6rem;">
+        <div><strong>Degree / Branch:</strong> ${escapeHtml(candidateProfile.degree)} (${escapeHtml(candidateProfile.branch)})</div>
+        <div><strong>Graduation Year:</strong> ${escapeHtml(candidateProfile.graduationYear)}</div>
+        <div><strong>Experience Level:</strong> ${escapeHtml(candidateProfile.experience)}</div>
+        <div><strong>Technical Skills (${candidateProfile.skills.length}):</strong></div>
+        <div class="skills-list">
+          ${candidateProfile.skills.map(s => `<span class="skill-chip">✓ ${escapeHtml(s)}</span>`).join("")}
+        </div>
+        <div style="margin-top: 0.4rem;"><strong>Key Projects:</strong> ${candidateProfile.projects.join("; ")}</div>
+      </div>
+    `;
+  }
+
+  async function updateResumeFeedback() {
+    try {
+      const resp = await fetch("/api/resume/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: candidateProfile })
+      });
+      const data = await resp.json();
+
+      const strList = document.getElementById("resume-strengths-list");
+      const impList = document.getElementById("resume-improvements-list");
+
+      if (strList) strList.innerHTML = (data.strengths || []).map(s => `<li>✓ ${escapeHtml(s)}</li>`).join("");
+      if (impList) impList.innerHTML = (data.suggestedImprovements || []).map(i => `<li>💡 ${escapeHtml(i)}</li>`).join("");
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // JD MATCHER
+  // -------------------------------------------------------------------
+  function initJdMatcher() {
+    const btn = document.getElementById("btn-analyze-jd");
+    const input = document.getElementById("jd-input-text");
+    const resultBody = document.getElementById("jd-result-body");
+
+    if (btn && input && resultBody) {
+      btn.addEventListener("click", async () => {
+        const text = input.value.trim();
+        if (!text) return alert("Please paste a Job Description first.");
+
+        btn.disabled = true;
+        btn.textContent = "Analyzing JD...";
+
+        try {
+          const resp = await fetch("/api/jd/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jdText: text, profile: candidateProfile })
+          });
+          const res = await resp.json();
+
+          if (res.status === "success") {
+            resultBody.innerHTML = `
+              <div style="margin-bottom: 1rem;">
+                <div style="font-size: 1.8rem; font-weight: 800; color: var(--accent-emerald);">${res.matchScore}% AI MATCH SCORE</div>
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.2rem;">${escapeHtml(res.explanation.whyMatch)}</p>
+              </div>
+
+              <div style="margin-bottom: 1rem;">
+                <h4>Matching Required Skills</h4>
+                <div class="skills-list" style="margin-top: 0.3rem;">
+                  ${(res.matchingSkills || []).map(s => `<span class="skill-chip">✓ ${escapeHtml(s)}</span>`).join("")}
+                </div>
+              </div>
+
+              <div style="margin-bottom: 1rem;">
+                <h4 style="color: var(--accent-rose);">Missing Required Skills</h4>
+                <div class="skills-list" style="margin-top: 0.3rem;">
+                  ${(res.missingSkills || []).map(s => `<span class="skill-chip missing">△ ${escapeHtml(s)}</span>`).join("")}
+                </div>
+              </div>
+
+              <div>
+                <h4>Suggested Interview Preparation Topics</h4>
+                <ul style="font-size: 0.85rem; color: var(--text-secondary); padding-left: 1.2rem; margin-top: 0.3rem;">
+                  ${(res.interviewPrepTopics || []).map(t => `<li>${escapeHtml(t)}</li>`).join("")}
+                </ul>
+              </div>
+            `;
+          }
+        } catch (e) {
+          alert("Error: " + e.message);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Calculate Deterministic Match & Analyze";
+        }
+      });
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // SKILL GAP
+  // -------------------------------------------------------------------
+  async function loadSkillGap() {
+    try {
+      const resp = await fetch(`/api/skills/gap?skills=${encodeURIComponent(candidateProfile.skills.join(","))}`);
+      const res = await resp.json();
+
+      document.getElementById("lbl-skillgap-sample").textContent = res.sampleSize || 0;
+
+      const barsContainer = document.getElementById("skill-frequency-bars");
+      const freqs = res.skillFrequencies || [];
+
+      barsContainer.innerHTML = freqs.map(f => `
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.2rem;">
+            <span>${escapeHtml(f.skill)} ${f.isMissing ? '<span style="color: var(--accent-rose); font-size: 0.75rem;">(Missing from your profile)</span>' : '✓'}</span>
+            <span>Appears in ${f.percentage}% of matching jobs (${f.count} jobs)</span>
+          </div>
+          <div style="height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden;">
+            <div style="height: 100%; width: ${f.percentage}%; background: ${f.isMissing ? 'var(--accent-rose)' : 'var(--accent-indigo)'};"></div>
+          </div>
+        </div>
+      `).join("");
+
+      const cardsContainer = document.getElementById("learning-cards-container");
+      const recs = res.missingRecommendations || [];
+
+      cardsContainer.innerHTML = recs.map(r => `
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+            <h3 style="color: var(--accent-cyan);">${escapeHtml(r.skill)}</h3>
+            <span class="match-pill medium">${r.percentage}% Job Frequency</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;">Appears in ${r.percentage}% of current tech postings (sample size: ${r.sampleSize} jobs).</p>
+          <h4 style="font-size: 0.85rem; margin-bottom: 0.3rem;">Suggested Learning Roadmap:</h4>
+          <ul style="font-size: 0.8rem; color: var(--text-muted); padding-left: 1.2rem;">
+            ${(r.learningTopics || []).map(t => `<li>${escapeHtml(t)}</li>`).join("")}
+          </ul>
+        </div>
+      `).join("");
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // CAREER INSIGHTS
+  // -------------------------------------------------------------------
+  async function loadInsights() {
+    try {
+      const resp = await fetch("/api/insights");
+      const res = await resp.json();
+
+      if (res.status === "success") {
+        document.getElementById("insight-top-skills").innerHTML = (res.topSkills || []).map(s => `
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color);">
+            <span>${escapeHtml(s.name)}</span>
+            <strong style="color: var(--accent-cyan);">${s.count} jobs (${s.percentage}%)</strong>
+          </div>
+        `).join("");
+
+        document.getElementById("insight-top-roles").innerHTML = (res.topRoles || []).map(r => `
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color);">
+            <span>${escapeHtml(r.name)}</span>
+            <strong>${r.count} postings</strong>
+          </div>
+        `).join("");
+
+        document.getElementById("insight-top-locations").innerHTML = (res.topLocations || []).map(l => `
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color);">
+            <span>${escapeHtml(l.name)}</span>
+            <strong>${l.count} jobs</strong>
+          </div>
+        `).join("");
+
+        document.getElementById("insight-top-companies").innerHTML = (res.topCompanies || []).map(c => `
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color);">
+            <span>${escapeHtml(c.name)}</span>
+            <strong>${c.count} listings</strong>
+          </div>
+        `).join("");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // SAVED JOBS
+  // -------------------------------------------------------------------
+  function renderSavedJobs() {
+    const container = document.getElementById("saved-jobs-grid");
+    const savedJobs = allJobs.filter(j => savedJobIds.includes(j.id));
+
+    if (savedJobs.length === 0) {
+      container.innerHTML = `<div class="empty-state"><p>No saved jobs yet. Click '☆ Save' on any job card to bookmark it.</p></div>`;
+    } else {
+      container.innerHTML = savedJobs.map(j => renderJobCard(j)).join("");
+      attachCardListeners();
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // SOURCE HEALTH
+  // -------------------------------------------------------------------
+  async function loadSourceHealth() {
+    try {
+      const resp = await fetch("/api/crawler/status");
+      const data = await resp.json();
+      const sources = data.sources || [];
+      const tbody = document.getElementById("health-table-body");
+
+      if (tbody) {
+        tbody.innerHTML = sources.map(s => `
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 0.75rem;"><strong>${escapeHtml(s.source)}</strong></td>
+            <td style="padding: 0.75rem;">
+              <span style="color: ${s.enabled && !s.error ? 'var(--accent-emerald)' : 'var(--accent-rose)'}">
+                ${s.enabled && !s.error ? '● Active' : '● Degraded / Unconfigured'}
+              </span>
+            </td>
+            <td style="padding: 0.75rem;">${s.fetched}</td>
+            <td style="padding: 0.75rem;">${s.valid}</td>
+            <td style="padding: 0.75rem;">${s.duplicates}</td>
+            <td style="padding: 0.75rem;">${s.lastFetch || 'N/A'}</td>
+            <td style="padding: 0.75rem; color: var(--text-muted);">${escapeHtml(s.error || 'None')}</td>
+          </tr>
+        `).join("");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // Helper
+  function escapeHtml(str) {
+    if (!str) return "";
+    return str.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+});

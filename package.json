@@ -1,0 +1,22 @@
+{
+  "name": "job-radar",
+  "version": "1.0.0",
+  "description": "AI-Powered Job Radar Platform for CSE/IT Students and Freshers in India",
+  "main": "server.py",
+  "scripts": {
+    "start": "python server.py",
+    "dev": "python server.py",
+    "crawl": "python crawler/run.py",
+    "test": "python -m unittest discover tests"
+  },
+  "keywords": [
+    "job-board",
+    "ai-matching",
+    "fresher-jobs",
+    "india-jobs",
+    "job-radar",
+    "cse-it"
+  ],
+  "author": "Job Radar Team",
+  "license": "MIT"
+}
