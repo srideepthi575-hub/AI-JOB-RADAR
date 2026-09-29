@@ -276,7 +276,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderJobCard(job) {
     const isSaved = savedJobIds.includes(job.id);
-    const score = job._matchScore || calculateMatch(job);
     const reqSkills = job.requiredSkills || [];
     
     const candSkills = (candidateProfile.skills || []).map(s => s.toLowerCase());
@@ -290,9 +289,6 @@ document.addEventListener("DOMContentLoaded", () => {
             <div>
               <h3 class="job-title">${escapeHtml(job.title)}</h3>
               <div class="job-company">${escapeHtml(job.company)}</div>
-            </div>
-            <div class="match-pill ${score < 75 ? 'medium' : ''}">
-              ${score}% AI MATCH
             </div>
           </div>
 
@@ -422,8 +418,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const candSkills = (candidateProfile.skills || []).map(s => s.toLowerCase());
       const matchingChips = reqSkills.filter(s => candSkills.includes(s.toLowerCase()));
       const missingChips = reqSkills.filter(s => !candSkills.includes(s.toLowerCase()));
-      const score = job._matchScore;
-      const scoreColor = score >= 80 ? "var(--accent-cyan)" : score >= 60 ? "#f59e0b" : "#ef4444";
 
       return `
         <div class="card job-card" data-id="${job.id}">
@@ -432,9 +426,6 @@ document.addEventListener("DOMContentLoaded", () => {
               <div>
                 <h3 class="job-title">${escapeHtml(job.title)}</h3>
                 <div class="job-company">${escapeHtml(job.company)}</div>
-              </div>
-              <div class="match-pill ${score < 75 ? 'medium' : ''}" style="background:${scoreColor}15;border:1px solid ${scoreColor};color:${scoreColor};">
-                ${score}% MATCH
               </div>
             </div>
 
