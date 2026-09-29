@@ -479,42 +479,49 @@ document.addEventListener("DOMContentLoaded", () => {
       fileInput.addEventListener("change", async (e) => {
         if (e.target.files.length > 0) {
           const file = e.target.files[0];
-          const formData = new FormData();
-          formData.append("file", file);
-
           dropzone.innerHTML = `<p>⏳ Parsing ${escapeHtml(file.name)}...</p>`;
+
+          let parsedOk = false;
           try {
+            const formData = new FormData();
+            formData.append("file", file);
             const resp = await fetch("/api/resume/parse", { method: "POST", body: formData });
-            const contentType = resp.headers.get("content-type") || "";
-            if (!contentType.includes("application/json")) {
-              // Backend unavailable — fallback to client-side text extraction
-              const text = await file.text().catch(() => "");
-              if (text.trim()) {
-                applyResumeTextClientSide(text, file.name);
-              } else {
-                alert("Resume upload requires a running backend. Please paste your resume text in the text box below instead.");
+            if (resp.ok) {
+              const ct = resp.headers.get("content-type") || "";
+              if (ct.includes("application/json")) {
+                const data = await resp.json();
+                if (data.status === "success") {
+                  candidateProfile = data.profile;
+                  await updateResumeFeedback();
+                  renderProfileSummary();
+                  renderJobsFeed();
+                  alert("Resume parsed successfully!");
+                  parsedOk = true;
+                }
               }
-              return;
             }
-            const data = await resp.json();
-            if (data.status === "success") {
-              candidateProfile = data.profile;
-              await updateResumeFeedback();
-              renderProfileSummary();
-              renderJobsFeed();
-              alert("Resume parsed successfully!");
-            } else {
-              alert("Could not parse resume: " + (data.message || "Unknown error"));
-            }
-          } catch (err) {
-            alert("Error parsing resume: " + err.message);
-          } finally {
-            dropzone.innerHTML = `
-              <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
-              <p style="font-weight: 600; margin-bottom: 0.2rem;">Click or drag PDF / DOCX resume here</p>
-              <p style="font-size: 0.8rem; color: var(--text-muted);">Max file size: 10MB.</p>
-            `;
+          } catch (_) {}
+
+          if (!parsedOk) {
+            // Fallback: try reading file as text (works for .txt, sometimes .docx)
+            try {
+              const text = await file.text();
+              if (text && text.trim().length > 50 && !text.startsWith("%PDF")) {
+                applyResumeTextClientSide(text, file.name);
+                parsedOk = true;
+              }
+            } catch (_) {}
           }
+
+          if (!parsedOk) {
+            alert("Could not auto-parse this file on the current hosting.\n\nPlease:\n1. Copy your resume text\n2. Paste it in the text box below\n3. Click Analyze Resume");
+          }
+
+          dropzone.innerHTML = `
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
+            <p style="font-weight: 600; margin-bottom: 0.2rem;">Click or drag PDF / DOCX resume here</p>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">Max file size: 10MB.</p>
+          `;
         }
       });
     }
@@ -524,30 +531,31 @@ document.addEventListener("DOMContentLoaded", () => {
         const text = textInput.value.trim();
         if (!text) return alert("Please enter resume text.");
 
+        let parsedOk = false;
         try {
           const resp = await fetch("/api/resume/parse", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: text })
+            body: JSON.stringify({ text })
           });
-          const contentType = resp.headers.get("content-type") || "";
-          if (!contentType.includes("application/json")) {
-            // Backend unavailable — parse client-side
-            applyResumeTextClientSide(text, "pasted text");
-            return;
+          if (resp.ok) {
+            const ct = resp.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              const data = await resp.json();
+              if (data.status === "success") {
+                candidateProfile = data.profile;
+                await updateResumeFeedback();
+                renderProfileSummary();
+                renderJobsFeed();
+                alert("Resume text analyzed!");
+                parsedOk = true;
+              }
+            }
           }
-          const data = await resp.json();
-          if (data.status === "success") {
-            candidateProfile = data.profile;
-            await updateResumeFeedback();
-            renderProfileSummary();
-            renderJobsFeed();
-            alert("Resume text analyzed!");
-          } else {
-            alert("Could not analyze text: " + (data.message || "Unknown error"));
-          }
-        } catch (err) {
-          // Fallback: parse client-side
+        } catch (_) {}
+
+        if (!parsedOk) {
+          // Always fall back to client-side parsing
           applyResumeTextClientSide(text, "pasted text");
         }
       });
