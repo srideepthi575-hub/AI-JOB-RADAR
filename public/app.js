@@ -503,14 +503,32 @@ document.addEventListener("DOMContentLoaded", () => {
           } catch (_) {}
 
           if (!parsedOk) {
-            // Fallback: try reading file as text (works for .txt, sometimes .docx)
+            // Fallback: try client-side parsing
             try {
-              const text = await file.text();
-              if (text && text.trim().length > 50 && !text.startsWith("%PDF")) {
-                applyResumeTextClientSide(text, file.name);
-                parsedOk = true;
+              if (file.name.toLowerCase().endsWith(".pdf") && window.pdfjsLib) {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = "";
+                for (let i = 1; i <= pdf.numPages; i++) {
+                  const page = await pdf.getPage(i);
+                  const content = await page.getTextContent();
+                  const pageText = content.items.map(item => item.str).join(" ");
+                  fullText += pageText + "\n";
+                }
+                if (fullText.trim()) {
+                  applyResumeTextClientSide(fullText, file.name);
+                  parsedOk = true;
+                }
+              } else {
+                const text = await file.text();
+                if (text && text.trim().length > 50 && !text.startsWith("%PDF")) {
+                  applyResumeTextClientSide(text, file.name);
+                  parsedOk = true;
+                }
               }
-            } catch (_) {}
+            } catch (e) {
+              console.error("Client-side parse error:", e);
+            }
           }
 
           if (!parsedOk) {
