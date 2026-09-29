@@ -57,13 +57,25 @@ def load_jobs_data() -> dict:
 
 @app.route("/")
 def serve_index():
-    return send_from_directory(PUBLIC_DIR, "index.html")
+    resp = send_from_directory(PUBLIC_DIR, "index.html")
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 @app.route("/<path:path>")
 def serve_static(path):
     if os.path.exists(os.path.join(PUBLIC_DIR, path)):
-        return send_from_directory(PUBLIC_DIR, path)
-    return send_from_directory(PUBLIC_DIR, "index.html")
+        resp = send_from_directory(PUBLIC_DIR, path)
+        # Prevent caching of HTML, CSS, JS — always serve fresh
+        if path.endswith((".html", ".css", ".js")):
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            resp.headers["Pragma"] = "no-cache"
+            resp.headers["Expires"] = "0"
+        return resp
+    resp = send_from_directory(PUBLIC_DIR, "index.html")
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
 
 # -------------------------------------------------------------------
 # API ENDPOINTS
