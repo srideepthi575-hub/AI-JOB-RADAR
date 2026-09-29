@@ -3,17 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Global State
   let allJobs = [];
   let groupedJobs = { today: [], thisWeek: [], thisMonth: [], unspecified: [] };
-  let candidateProfile = {
-    degree: "B.Tech CSE",
-    branch: "Computer Science",
-    graduationYear: "2026",
-    experience: "Fresher",
-    skills: ["Python", "Java", "JavaScript", "SQL", "Git", "HTML", "CSS"],
-    projects: ["E-commerce Web App", "Data Analysis Dashboard"],
-    preferredRoles: ["Software Developer", "Frontend Developer", "Python Developer"],
-    preferredLocations: ["Bengaluru", "Chennai", "Hyderabad", "Remote"],
-    preferredWorkMode: "Any"
-  };
+  let candidateProfile = JSON.parse(localStorage.getItem("jobradar_profile") || "null");
 
   let activeDateGroup = "all";
   let savedJobIds = JSON.parse(localStorage.getItem("jobradar_saved_ids") || "[]");
@@ -257,10 +247,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (jobType !== "all" && !(job.jobType || "").toLowerCase().includes(jobType)) return false;
       if (source !== "all" && !(job.source || "").toLowerCase().includes(source)) return false;
 
-      // Match Score calculation
-      const matchScore = calculateMatch(job);
+      // Match Score calculation (only when resume is uploaded)
+      const hasResume = candidateProfile && Array.isArray(candidateProfile.skills) && candidateProfile.skills.length > 0;
+      const matchScore = hasResume ? calculateMatch(job) : 0;
       job._matchScore = matchScore;
-      if (minScore > 0 && matchScore < minScore) return false;
+      if (hasResume && minScore > 0 && matchScore < minScore) return false;
 
       return true;
     });
@@ -279,10 +270,40 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderJobCard(job) {
     const isSaved = savedJobIds.includes(job.id);
     const reqSkills = job.requiredSkills || [];
-    
-    const candSkills = (candidateProfile.skills || []).map(s => s.toLowerCase());
-    const matchingChips = reqSkills.filter(s => candSkills.includes(s.toLowerCase()));
-    const missingChips = reqSkills.filter(s => !candSkills.includes(s.toLowerCase()));
+    const hasResume = candidateProfile && Array.isArray(candidateProfile.skills) && candidateProfile.skills.length > 0;
+
+    let skillsHtml = "";
+    let matchBadgeHtml = "";
+
+    if (hasResume) {
+      const candSkills = (candidateProfile.skills || []).map(s => s.toLowerCase());
+      const matchingChips = reqSkills.filter(s => candSkills.includes(s.toLowerCase()));
+      const missingChips = reqSkills.filter(s => !candSkills.includes(s.toLowerCase()));
+      const score = calculateMatch(job);
+
+      matchBadgeHtml = `
+        <span class="match-pill ${score >= 70 ? 'high' : score >= 45 ? 'medium' : 'low'}">
+          ${score}% Match
+        </span>
+      `;
+
+      skillsHtml = `
+        <div style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.4rem;">
+          ✅ ${matchingChips.length}/${reqSkills.length} skills matched
+          ${missingChips.length > 0 ? ` · Missing: <span style="color: var(--accent-amber);">${missingChips.slice(0,3).map(s => escapeHtml(s)).join(", ")}</span>` : ' · <span style="color: var(--accent-emerald);">All required skills matched!</span>'}
+        </div>
+        <div class="skills-list">
+          ${matchingChips.map(s => `<span class="skill-chip">✓ ${escapeHtml(s)}</span>`).join("")}
+          ${missingChips.map(s => `<span class="skill-chip missing">△ ${escapeHtml(s)}</span>`).join("")}
+        </div>
+      `;
+    } else {
+      skillsHtml = `
+        <div class="skills-list">
+          ${reqSkills.map(s => `<span class="skill-chip">${escapeHtml(s)}</span>`).join("")}
+        </div>
+      `;
+    }
 
     return `
       <div class="card job-card" data-id="${job.id}">
@@ -292,6 +313,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <h3 class="job-title">${escapeHtml(job.title)}</h3>
               <div class="job-company">${escapeHtml(job.company)}</div>
             </div>
+            ${matchBadgeHtml}
           </div>
 
           <div class="job-meta-list" style="margin-top: 0.6rem; margin-bottom: 0.75rem;">
@@ -301,14 +323,11 @@ document.addEventListener("DOMContentLoaded", () => {
             <span class="job-meta-item">📅 Posted: ${escapeHtml(job.postedAt)}</span>
           </div>
 
-          <div class="skills-list">
-            ${matchingChips.map(s => `<span class="skill-chip">✓ ${escapeHtml(s)}</span>`).join("")}
-            ${missingChips.map(s => `<span class="skill-chip missing">△ ${escapeHtml(s)}</span>`).join("")}
-          </div>
+          ${skillsHtml}
         </div>
 
         <div class="job-card-footer">
-          <span class="source-badge">Source: ${escapeHtml(job.source)}</span>
+          <span class="source-badge">via ${escapeHtml(job.source)}</span>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
             <button class="btn btn-secondary btn-sm btn-bookmark" data-id="${job.id}">
               ${isSaved ? '★ Saved' : '☆ Save'}
@@ -323,6 +342,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function calculateMatch(job) {
+    if (!candidateProfile || !Array.isArray(candidateProfile.skills) || candidateProfile.skills.length === 0) {
+      return 0;
+    }
     const candSkills = new Set((candidateProfile.skills || []).map(s => s.toLowerCase()));
     const reqSkills = job.requiredSkills || [];
     if (reqSkills.length === 0) return 75;
@@ -368,11 +390,36 @@ document.addEventListener("DOMContentLoaded", () => {
     const container = document.getElementById("recommended-grid-container");
     if (!container) return;
 
+    const hasResume = candidateProfile && Array.isArray(candidateProfile.skills) && candidateProfile.skills.length > 0;
+
+    if (!hasResume) {
+      container.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1.5rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg);">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">📄</div>
+          <h2 style="font-size: 1.4rem; margin-bottom: 0.5rem; color: var(--text-primary);">Personalized Recommendations Locked</h2>
+          <p style="color: var(--text-secondary); max-width: 520px; margin: 0 auto 1.5rem auto; font-size: 0.9rem; line-height: 1.5;">
+            Upload your resume in the Resume Analyzer tab to unlock AI-calculated match scores, ranked job recommendations, and personalized skill gap analysis based on your actual profile.
+          </p>
+          <button class="btn btn-primary btn-sm" id="btn-goto-resume-tab">
+            <span>📄</span> Upload Resume to Unlock
+          </button>
+        </div>
+      `;
+      const btnGo = document.getElementById("btn-goto-resume-tab");
+      if (btnGo) {
+        btnGo.addEventListener("click", () => {
+          const tab = document.querySelector('.nav-link[data-tab="resume-tab"]');
+          if (tab) tab.click();
+        });
+      }
+      return;
+    }
+
     if (allJobs.length === 0) {
       container.innerHTML = `
-        <div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text-secondary);">
-          <div style="font-size:2.5rem;margin-bottom:1rem;">📭</div>
-          <p style="font-size:1rem;font-weight:600;">No jobs loaded yet. Go to Explore Jobs first.</p>
+        <div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--text-secondary);">
+          <div style="font-size: 2.5rem; margin-bottom: 1rem;">📭</div>
+          <p style="font-size: 1rem; font-weight: 600;">No verified jobs loaded yet.</p>
         </div>`;
       return;
     }
@@ -412,57 +459,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const totalScore = Math.min(98, Math.max(30, skillScore + roleScore + locScore + recencyScore));
       return { ...j, _matchScore: totalScore, _reqMatched: reqMatched, _reqTotal: reqSkills.length };
-    }).sort((a, b) => b._matchScore - a._matchScore).slice(0, 12);
+    }).sort((a, b) => b._matchScore - a._matchScore).slice(0, 18);
 
-    container.innerHTML = scored.map(job => {
-      const isSaved = savedJobIds.includes(job.id);
-      const reqSkills = job.requiredSkills || [];
-      const candSkills = (candidateProfile.skills || []).map(s => s.toLowerCase());
-      const matchingChips = reqSkills.filter(s => candSkills.includes(s.toLowerCase()));
-      const missingChips = reqSkills.filter(s => !candSkills.includes(s.toLowerCase()));
-
-      return `
-        <div class="card job-card" data-id="${job.id}">
-          <div>
-            <div class="job-card-header">
-              <div>
-                <h3 class="job-title">${escapeHtml(job.title)}</h3>
-                <div class="job-company">${escapeHtml(job.company)}</div>
-              </div>
-            </div>
-
-            <div class="job-meta-list" style="margin-top:0.6rem;margin-bottom:0.6rem;">
-              <span class="job-meta-item">📍 ${escapeHtml(job.location)}</span>
-              <span class="job-meta-item">💼 ${escapeHtml(job.workMode)}</span>
-              <span class="job-meta-item">⏱️ ${escapeHtml(job.experienceRequirement)}</span>
-              <span class="job-meta-item">📅 ${escapeHtml(job.postedAt)}</span>
-            </div>
-
-            <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.5rem;">
-              ✅ ${matchingChips.length}/${reqSkills.length} skills matched
-              ${missingChips.length > 0 ? ` · Missing: <span style="color:#f59e0b">${missingChips.slice(0,3).map(s => escapeHtml(s)).join(", ")}</span>` : ' · <span style="color:var(--accent-cyan)">All required skills matched!</span>'}
-            </div>
-
-            <div class="skills-list">
-              ${matchingChips.map(s => `<span class="skill-chip">✓ ${escapeHtml(s)}</span>`).join("")}
-              ${missingChips.slice(0,3).map(s => `<span class="skill-chip missing">△ ${escapeHtml(s)}</span>`).join("")}
-            </div>
-          </div>
-
-          <div class="job-card-footer">
-            <span class="source-badge">via ${escapeHtml(job.source)}</span>
-            <div style="display:flex;gap:0.5rem;align-items:center;">
-              <button class="btn btn-secondary btn-sm btn-bookmark" data-id="${job.id}">
-                ${isSaved ? '★ Saved' : '☆ Save'}
-              </button>
-              <a href="${escapeHtml(job.sourceUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">
-                Apply Now ↗
-              </a>
-            </div>
-          </div>
-        </div>`;
-    }).join("");
-
+    container.innerHTML = scored.map(job => renderJobCard(job)).join("");
     attachCardListeners();
   }
 
@@ -649,6 +648,7 @@ document.addEventListener("DOMContentLoaded", () => {
               const data = await resp.json();
               if (data.status === "success") {
                 candidateProfile = data.profile;
+                localStorage.setItem("jobradar_profile", JSON.stringify(candidateProfile));
                 await updateResumeFeedback();
                 renderProfileSummary();
                 renderJobsFeed();
@@ -667,25 +667,202 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function applyResumeTextClientSide(text, sourceName) {
+    if (!text || typeof text !== "string") return;
+
+    const ALL_SKILLS = [
+      "Python", "Java", "JavaScript", "TypeScript", "C", "C++", "C#", "Go", "Rust", "PHP", "Ruby", "Swift", "Kotlin",
+      "HTML", "HTML5", "CSS", "CSS3", "React", "React.js", "Angular", "Vue.js", "Next.js", "Node.js", "Express", "Django", "Flask", "FastAPI",
+      "Spring Boot", "SQL", "MySQL", "PostgreSQL", "MongoDB", "Redis", "Oracle", "SQLite",
+      "Git", "GitHub", "Docker", "Kubernetes", "AWS", "Azure", "GCP", "Linux", "REST API", "GraphQL",
+      "Data Structures", "Algorithms", "OOP", "System Design", "CI/CD", "Tailwind CSS", "Bootstrap",
+      "Pandas", "NumPy", "PyTorch", "TensorFlow", "Scikit-Learn", "Machine Learning", "AI", "Data Analysis", "Deep Learning", "NLP",
+      "Selenium", "Playwright", "Jest", "JUnit", "QA Testing", "Postman", "Android",
+      "Figma", "Power BI", "Tableau", "Excel", "ETL", "Microservices", "Firebase", "Redux", "Kafka"
+    ];
+
+    const detectedSkills = [];
+    ALL_SKILLS.forEach(skill => {
+      const pattern = new RegExp("(?:^|[^a-zA-Z0-9])" + skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:$|[^a-zA-Z0-9])", "i");
+      if (pattern.test(text)) {
+        if (!detectedSkills.includes(skill)) {
+          detectedSkills.push(skill);
+        }
+      }
+    });
+
+    if (detectedSkills.length === 0) {
+      detectedSkills.push("Problem Solving", "Computer Science Fundamentals");
+    }
+
+    // Candidate Name Detection
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    let name = "Candidate";
+    for (let i = 0; i < Math.min(5, lines.length); i++) {
+      const l = lines[i];
+      if (l.length >= 3 && l.length <= 40 && !l.includes("@") && !l.includes("http") && !l.includes("Resume") && !l.includes("CV") && !l.includes("Curriculum") && !/\d/.test(l)) {
+        name = l;
+        break;
+      }
+    }
+
+    // Degree & Branch Detection
+    let degree = "B.Tech";
+    let branch = "Computer Science & Engineering";
+    const textLower = text.toLowerCase();
+    if (textLower.includes("b.tech") || textLower.includes("bachelor of technology") || textLower.includes("b.e.") || textLower.includes("bachelor of engineering")) {
+      degree = "B.Tech";
+    } else if (textLower.includes("m.tech") || textLower.includes("master of technology")) {
+      degree = "M.Tech";
+    } else if (textLower.includes("mca") || textLower.includes("master of computer applications")) {
+      degree = "MCA";
+    } else if (textLower.includes("bca") || textLower.includes("bachelor of computer applications")) {
+      degree = "BCA";
+    } else if (textLower.includes("b.sc") || textLower.includes("bachelor of science")) {
+      degree = "B.Sc";
+    }
+
+    if (textLower.includes("information technology") || textLower.includes(" it ")) {
+      branch = "Information Technology";
+    } else if (textLower.includes("data science") || textLower.includes("artificial intelligence") || textLower.includes("ai/ml")) {
+      branch = "Data Science / AI";
+    } else if (textLower.includes("electronics") || textLower.includes("ece") || textLower.includes("electrical")) {
+      branch = "Electronics & Communication";
+    }
+
+    // Graduation Year Detection
+    let gradYear = "2026";
+    const yearMatches = text.match(/\b(202[0-9])\b/g);
+    if (yearMatches && yearMatches.length > 0) {
+      gradYear = yearMatches[yearMatches.length - 1];
+    }
+
+    // Experience Level
+    let expLevel = "Fresher";
+    if (textLower.includes("years of experience") || textLower.includes("yrs exp") || textLower.includes("senior software") || textLower.includes("lead developer")) {
+      const expMatch = text.match(/(\d+)\+?\s*(?:years?|yrs?)/i);
+      if (expMatch && parseInt(expMatch[1]) >= 2) {
+        expLevel = `${expMatch[1]}+ Years Experience`;
+      }
+    }
+
+    // Preferred / Target Roles Detection
+    const preferredRoles = [];
+    if (detectedSkills.some(s => ["React", "Vue.js", "Angular", "HTML", "CSS", "Next.js"].includes(s))) {
+      preferredRoles.push("Frontend Developer");
+    }
+    if (detectedSkills.some(s => ["Node.js", "Express", "Django", "Flask", "Spring Boot", "FastAPI", "Python", "Java"].includes(s))) {
+      preferredRoles.push("Backend Developer");
+    }
+    if (preferredRoles.includes("Frontend Developer") && preferredRoles.includes("Backend Developer")) {
+      preferredRoles.unshift("Full Stack Developer");
+    }
+    if (detectedSkills.some(s => ["Machine Learning", "PyTorch", "TensorFlow", "Pandas", "Scikit-Learn"].includes(s))) {
+      preferredRoles.push("AI / ML Engineer");
+    }
+    if (detectedSkills.some(s => ["Docker", "Kubernetes", "AWS", "CI/CD", "Linux"].includes(s))) {
+      preferredRoles.push("DevOps Engineer");
+    }
+    if (preferredRoles.length === 0) {
+      preferredRoles.push("Software Engineer");
+    }
+
+    candidateProfile = {
+      name: name,
+      degree: degree,
+      branch: branch,
+      graduationYear: gradYear,
+      experience: expLevel,
+      skills: detectedSkills,
+      preferredRoles: [...new Set(preferredRoles)],
+      preferredLocations: ["Pan-India", "Bengaluru", "Hyderabad", "Remote"]
+    };
+
+    localStorage.setItem("jobradar_profile", JSON.stringify(candidateProfile));
+    renderProfileSummary();
+    updateResumeFeedback();
+    renderJobsFeed();
+    renderRecommendedJobs();
+    loadSkillGap();
+
+    alert(`✅ Resume parsed successfully (${sourceName || "upload"})!\n\nIdentified ${candidateProfile.skills.length} technical skills for ${candidateProfile.name}. Personalized matching and recommendations are now active.`);
+  }
+
   function renderProfileSummary() {
     const view = document.getElementById("profile-details-view");
+    const statusLbl = document.getElementById("lbl-profile-status");
     if (!view) return;
+
+    const hasResume = candidateProfile && Array.isArray(candidateProfile.skills) && candidateProfile.skills.length > 0;
+
+    if (!hasResume) {
+      if (statusLbl) {
+        statusLbl.textContent = "Not Uploaded";
+        statusLbl.style.color = "var(--text-muted)";
+      }
+      view.innerHTML = `
+        <div style="font-size: 0.9rem; color: var(--text-secondary); padding: 1.5rem 0.5rem; text-align: center;">
+          <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">📋</div>
+          <p style="font-weight: 600; color: var(--text-primary); margin-bottom: 0.4rem;">No Resume Uploaded Yet</p>
+          <p style="font-size: 0.8rem; color: var(--text-muted); max-width: 320px; margin: 0 auto 1rem auto;">
+            Upload your PDF/DOCX or paste text on the left to extract your skills, graduation year, and unlock personalized matching across Jobs, Recommendations, and Skill Gap analysis.
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    if (statusLbl) {
+      statusLbl.textContent = "Active Profile";
+      statusLbl.style.color = "var(--accent-emerald)";
+    }
 
     view.innerHTML = `
       <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.6rem;">
-        <div><strong>Degree / Branch:</strong> ${escapeHtml(candidateProfile.degree)} (${escapeHtml(candidateProfile.branch)})</div>
-        <div><strong>Graduation Year:</strong> ${escapeHtml(candidateProfile.graduationYear)}</div>
-        <div><strong>Experience Level:</strong> ${escapeHtml(candidateProfile.experience)}</div>
-        <div><strong>Technical Skills (${candidateProfile.skills.length}):</strong></div>
+        <div><strong>Candidate:</strong> ${escapeHtml(candidateProfile.name || "Candidate")}</div>
+        <div><strong>Degree / Branch:</strong> ${escapeHtml(candidateProfile.degree || "B.Tech CSE")} (${escapeHtml(candidateProfile.branch || "Computer Science")})</div>
+        <div><strong>Graduation Year:</strong> ${escapeHtml(candidateProfile.graduationYear || "2026")}</div>
+        <div><strong>Experience Level:</strong> ${escapeHtml(candidateProfile.experience || "Fresher")}</div>
+        <div><strong>Extracted Technical Skills (${candidateProfile.skills.length}):</strong></div>
         <div class="skills-list">
           ${candidateProfile.skills.map(s => `<span class="skill-chip">✓ ${escapeHtml(s)}</span>`).join("")}
         </div>
-        <div style="margin-top: 0.4rem;"><strong>Key Projects:</strong> ${candidateProfile.projects.join("; ")}</div>
+        ${candidateProfile.projects && candidateProfile.projects.length > 0 ? `<div style="margin-top: 0.4rem;"><strong>Key Projects:</strong> ${escapeHtml(candidateProfile.projects.join("; "))}</div>` : ''}
+        ${candidateProfile.preferredRoles && candidateProfile.preferredRoles.length > 0 ? `<div><strong>Detected Target Roles:</strong> ${escapeHtml(candidateProfile.preferredRoles.join(", "))}</div>` : ''}
+        <button class="btn btn-secondary btn-sm" id="btn-reset-profile" style="margin-top: 0.75rem; align-self: flex-start;">
+          🗑️ Clear / Reset Resume
+        </button>
       </div>
     `;
+
+    const btnReset = document.getElementById("btn-reset-profile");
+    if (btnReset) {
+      btnReset.addEventListener("click", () => {
+        if (confirm("Clear your uploaded resume and revert to general job browsing?")) {
+          candidateProfile = null;
+          localStorage.removeItem("jobradar_profile");
+          renderProfileSummary();
+          updateResumeFeedback();
+          renderJobsFeed();
+          renderRecommendedJobs();
+          loadSkillGap();
+          alert("Resume cleared. Showing general job listings.");
+        }
+      });
+    }
   }
 
   async function updateResumeFeedback() {
+    const hasResume = candidateProfile && Array.isArray(candidateProfile.skills) && candidateProfile.skills.length > 0;
+    const strList = document.getElementById("resume-strengths-list");
+    const impList = document.getElementById("resume-improvements-list");
+
+    if (!hasResume) {
+      if (strList) strList.innerHTML = `<li>Upload a resume to generate grounded strengths.</li>`;
+      if (impList) impList.innerHTML = `<li>Upload a resume to generate actionable improvement suggestions.</li>`;
+      return;
+    }
+
     let parsedOk = false;
     try {
       const resp = await fetch("/api/resume/analyze", {
@@ -698,8 +875,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (ct.includes("application/json")) {
           const data = await resp.json();
           if (data.status === "success" || data.strengths) {
-            const strList = document.getElementById("resume-strengths-list");
-            const impList = document.getElementById("resume-improvements-list");
             if (strList) strList.innerHTML = (data.strengths || []).map(s => `<li>✓ ${escapeHtml(s)}</li>`).join("");
             if (impList) impList.innerHTML = (data.suggestedImprovements || []).map(i => `<li>💡 ${escapeHtml(i)}</li>`).join("");
             parsedOk = true;
@@ -710,8 +885,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!parsedOk) {
       // Dynamic client-side fallback feedback
-      const strList = document.getElementById("resume-strengths-list");
-      const impList = document.getElementById("resume-improvements-list");
       const skills = candidateProfile.skills || [];
       const strengths = [];
       const improvements = [];
@@ -762,26 +935,8 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.textContent = "Analyzing JD...";
 
         try {
-          let parsedOk = false;
-          let res = null;
+          const hasResume = candidateProfile && Array.isArray(candidateProfile.skills) && candidateProfile.skills.length > 0;
 
-          try {
-            const resp = await fetch("/api/jd/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ jdText: text, profile: candidateProfile })
-          });
-          if (resp.ok) {
-            const ct = resp.headers.get("content-type") || "";
-            if (ct.includes("application/json")) {
-              res = await resp.json();
-              if (res.status === "success") parsedOk = true;
-            }
-          }
-        } catch (_) {}
-
-        if (!parsedOk) {
-          // Client-side fallback for static deployments
           const ALL_SKILLS = [
             "Python","Java","JavaScript","TypeScript","C","C++","C#","Go","Rust","PHP","Ruby","Swift","Kotlin",
             "HTML","CSS","React","Angular","Vue.js","Next.js","Node.js","Express","Django","Flask","FastAPI",
@@ -794,33 +949,74 @@ document.addEventListener("DOMContentLoaded", () => {
           ];
           
           const jdSkills = ALL_SKILLS.filter(skill => {
-            const pattern = new RegExp("\\b" + skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+            const pattern = new RegExp("(?:^|[^a-zA-Z0-9])" + skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:$|[^a-zA-Z0-9])", "i");
             return pattern.test(text);
           });
-          
-          const candSkillsLower = (candidateProfile.skills || []).map(s => s.toLowerCase());
-          const matchingSkills = jdSkills.filter(s => candSkillsLower.includes(s.toLowerCase()));
-          const missingSkills = jdSkills.filter(s => !candSkillsLower.includes(s.toLowerCase()));
-          
-          let matchScore = 30;
-          if (jdSkills.length > 0) {
-            matchScore = Math.round((matchingSkills.length / jdSkills.length) * 100);
-          } else {
-            matchScore = 70; // fallback if no skills detected
-          }
-          
-          res = {
-            status: "success",
-            matchScore: matchScore,
-            explanation: { whyMatch: `Based on a basic client-side analysis, you have ${matchingSkills.length} out of ${jdSkills.length} detected skills.` },
-            matchingSkills: matchingSkills,
-            missingSkills: missingSkills,
-            interviewPrepTopics: missingSkills.map(s => `Brush up on ${s}`)
-          };
-          parsedOk = true;
-        }
 
-        if (parsedOk && res.status === "success") {
+          if (!hasResume) {
+            resultBody.innerHTML = `
+              <div style="margin-bottom: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px;">
+                <div style="font-size: 1.1rem; font-weight: 700; color: var(--accent-cyan); margin-bottom: 0.3rem;">📋 Job Description Skills Detected</div>
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.8rem;">
+                  We identified <strong>${jdSkills.length} key required skills</strong> in this JD. Upload your resume in the <strong>Resume Analyzer</strong> tab to calculate your personalized AI match score, exact matching skills, and missing gap analysis.
+                </p>
+                <div class="skills-list">
+                  ${jdSkills.length > 0 ? jdSkills.map(s => `<span class="skill-chip">${escapeHtml(s)}</span>`).join("") : '<span style="color:var(--text-muted);font-size:0.85rem;">No standard skills extracted.</span>'}
+                </div>
+              </div>
+
+              <div>
+                <h4>Interview Preparation Focus for this JD:</h4>
+                <ul style="font-size: 0.85rem; color: var(--text-secondary); padding-left: 1.2rem; margin-top: 0.3rem;">
+                  ${jdSkills.slice(0, 5).map(s => `<li>Brush up on core concepts and practical projects in <strong>${escapeHtml(s)}</strong>.</li>`).join("")}
+                </ul>
+              </div>
+            `;
+            return;
+          }
+
+          let parsedOk = false;
+          let res = null;
+
+          try {
+            const resp = await fetch("/api/jd/analyze", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ jdText: text, profile: candidateProfile })
+            });
+            if (resp.ok) {
+              const ct = resp.headers.get("content-type") || "";
+              if (ct.includes("application/json")) {
+                res = await resp.json();
+                if (res.status === "success") parsedOk = true;
+              }
+            }
+          } catch (_) {}
+
+          if (!parsedOk) {
+            const candSkillsLower = (candidateProfile.skills || []).map(s => s.toLowerCase());
+            const matchingSkills = jdSkills.filter(s => candSkillsLower.includes(s.toLowerCase()));
+            const missingSkills = jdSkills.filter(s => !candSkillsLower.includes(s.toLowerCase()));
+            
+            let matchScore = 30;
+            if (jdSkills.length > 0) {
+              matchScore = Math.round((matchingSkills.length / jdSkills.length) * 100);
+            } else {
+              matchScore = 70;
+            }
+            
+            res = {
+              status: "success",
+              matchScore: matchScore,
+              explanation: { whyMatch: `Based on your uploaded resume, you have ${matchingSkills.length} out of ${jdSkills.length} detected skills for this role.` },
+              matchingSkills: matchingSkills,
+              missingSkills: missingSkills,
+              interviewPrepTopics: missingSkills.map(s => `Brush up on ${s}`)
+            };
+            parsedOk = true;
+          }
+
+          if (parsedOk && res.status === "success") {
             resultBody.innerHTML = `
               <div style="margin-bottom: 1rem;">
                 <div style="font-size: 1.8rem; font-weight: 800; color: var(--accent-emerald);">${res.matchScore}% AI MATCH SCORE</div>
@@ -828,14 +1024,14 @@ document.addEventListener("DOMContentLoaded", () => {
               </div>
 
               <div style="margin-bottom: 1rem;">
-                <h4>Matching Required Skills</h4>
+                <h4>Matching Required Skills (${(res.matchingSkills || []).length})</h4>
                 <div class="skills-list" style="margin-top: 0.3rem;">
                   ${(res.matchingSkills || []).map(s => `<span class="skill-chip">✓ ${escapeHtml(s)}</span>`).join("")}
                 </div>
               </div>
 
               <div style="margin-bottom: 1rem;">
-                <h4 style="color: var(--accent-rose);">Missing Required Skills</h4>
+                <h4 style="color: var(--accent-rose);">Missing Required Skills (${(res.missingSkills || []).length})</h4>
                 <div class="skills-list" style="margin-top: 0.3rem;">
                   ${(res.missingSkills || []).map(s => `<span class="skill-chip missing">△ ${escapeHtml(s)}</span>`).join("")}
                 </div>
@@ -864,23 +1060,26 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------------
   async function loadSkillGap() {
     try {
+      const hasResume = candidateProfile && Array.isArray(candidateProfile.skills) && candidateProfile.skills.length > 0;
       let parsedOk = false;
       let res = null;
 
-      try {
-        const resp = await fetch(`/api/skills/gap?skills=${encodeURIComponent(candidateProfile.skills.join(","))}`);
-        if (resp.ok) {
-          const ct = resp.headers.get("content-type") || "";
-          if (ct.includes("application/json")) {
-            res = await resp.json();
-            parsedOk = true;
+      if (hasResume) {
+        try {
+          const resp = await fetch(`/api/skills/gap?skills=${encodeURIComponent(candidateProfile.skills.join(","))}`);
+          if (resp.ok) {
+            const ct = resp.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              res = await resp.json();
+              parsedOk = true;
+            }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
       if (!parsedOk) {
-        // Fallback for static hosting
-        const candSkillsLower = (candidateProfile.skills || []).map(s => s.toLowerCase());
+        // Dynamic calculation from loaded live jobs
+        const candSkillsLower = hasResume ? (candidateProfile.skills || []).map(s => s.toLowerCase()) : [];
         const skillCounts = {};
         let sampleSize = 0;
         
@@ -889,7 +1088,8 @@ document.addEventListener("DOMContentLoaded", () => {
           const reqSkills = job.requiredSkills || [];
           reqSkills.forEach(s => {
              const key = s;
-             if (!skillCounts[key]) skillCounts[key] = { count: 0, missing: !candSkillsLower.includes(key.toLowerCase()) };
+             const isMiss = hasResume ? !candSkillsLower.includes(key.toLowerCase()) : false;
+             if (!skillCounts[key]) skillCounts[key] = { count: 0, missing: isMiss };
              skillCounts[key].count++;
           });
         });
@@ -901,54 +1101,90 @@ document.addEventListener("DOMContentLoaded", () => {
             isMissing: v.missing
         })).sort((a,b) => b.count - a.count).slice(0, 15);
         
+        const missingRecs = hasResume
+          ? sorted.filter(s => s.isMissing).slice(0, 3).map(s => ({
+              skill: s.skill,
+              percentage: s.percentage,
+              sampleSize: sampleSize,
+              learningTopics: [`Core fundamentals of ${s.skill}`, `Build a portfolio project using ${s.skill}`, `Common interview questions on ${s.skill}`]
+            }))
+          : sorted.slice(0, 3).map(s => ({
+              skill: s.skill,
+              percentage: s.percentage,
+              sampleSize: sampleSize,
+              learningTopics: [`Master ${s.skill} for industry demand`, `Build projects using ${s.skill}`, `Interview questions on ${s.skill}`]
+            }));
+
         res = {
            sampleSize: sampleSize,
            skillFrequencies: sorted,
-           missingRecommendations: sorted.filter(s => s.isMissing).slice(0, 3).map(s => ({
-             skill: s.skill,
-             percentage: s.percentage,
-             sampleSize: sampleSize,
-             learningTopics: [`Learn basics of ${s.skill}`, `Build a project using ${s.skill}`]
-           }))
+           missingRecommendations: missingRecs
         };
         parsedOk = true;
       }
 
       if (parsedOk) {
+        const lblSample = document.getElementById("lbl-skillgap-sample");
+        if (lblSample) lblSample.textContent = (res.sampleSize || allJobs.length) + " Jobs Analyzed";
 
-      document.getElementById("lbl-skillgap-sample").textContent = res.sampleSize || 0;
+        const barsContainer = document.getElementById("skill-frequency-bars");
+        const freqs = res.skillFrequencies || [];
 
-      const barsContainer = document.getElementById("skill-frequency-bars");
-      const freqs = res.skillFrequencies || [];
+        if (barsContainer) {
+          barsContainer.innerHTML = freqs.map(f => {
+            let badge = "";
+            let barBg = "var(--accent-indigo)";
+            if (hasResume) {
+              if (f.isMissing) {
+                badge = '<span style="color: var(--accent-rose); font-size: 0.75rem; font-weight: 600;">(Missing from your profile)</span>';
+                barBg = "var(--accent-rose)";
+              } else {
+                badge = '<span style="color: var(--accent-emerald); font-size: 0.75rem; font-weight: 600;">✓ In your profile</span>';
+                barBg = "var(--accent-emerald)";
+              }
+            }
 
-      barsContainer.innerHTML = freqs.map(f => `
-        <div>
-          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.2rem;">
-            <span>${escapeHtml(f.skill)} ${f.isMissing ? '<span style="color: var(--accent-rose); font-size: 0.75rem;">(Missing from your profile)</span>' : '✓'}</span>
-            <span>Appears in ${f.percentage}% of matching jobs (${f.count} jobs)</span>
-          </div>
-          <div style="height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden;">
-            <div style="height: 100%; width: ${f.percentage}%; background: ${f.isMissing ? 'var(--accent-rose)' : 'var(--accent-indigo)'};"></div>
-          </div>
-        </div>
-      `).join("");
+            return `
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.2rem;">
+                  <span><strong>${escapeHtml(f.skill)}</strong> ${badge}</span>
+                  <span style="color: var(--text-muted);">Appears in ${f.percentage}% of matching jobs (${f.count} jobs)</span>
+                </div>
+                <div style="height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden;">
+                  <div style="height: 100%; width: ${Math.min(100, Math.max(5, f.percentage))}%; background: ${barBg};"></div>
+                </div>
+              </div>
+            `;
+          }).join("");
+        }
 
-      const cardsContainer = document.getElementById("learning-cards-container");
-      const recs = res.missingRecommendations || [];
+        const cardsContainer = document.getElementById("learning-cards-container");
+        const recs = res.missingRecommendations || [];
 
-      cardsContainer.innerHTML = recs.map(r => `
-        <div class="card">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
-            <h3 style="color: var(--accent-cyan);">${escapeHtml(r.skill)}</h3>
-            <span class="match-pill medium">${r.percentage}% Job Frequency</span>
-          </div>
-          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;">Appears in ${r.percentage}% of current tech postings (sample size: ${r.sampleSize} jobs).</p>
-          <h4 style="font-size: 0.85rem; margin-bottom: 0.3rem;">Suggested Learning Roadmap:</h4>
-          <ul style="font-size: 0.8rem; color: var(--text-muted); padding-left: 1.2rem;">
-            ${(r.learningTopics || []).map(t => `<li>${escapeHtml(t)}</li>`).join("")}
-          </ul>
-        </div>
-      `).join("");
+        if (cardsContainer) {
+          let topNotice = "";
+          if (!hasResume) {
+            topNotice = `
+              <div style="grid-column: 1 / -1; padding: 0.8rem 1rem; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.85rem; color: var(--text-secondary);">
+                💡 <strong>Pro Tip:</strong> Upload your resume in the <strong>Resume Analyzer</strong> tab to see personalized learning roadmaps for skills missing from your specific profile.
+              </div>
+            `;
+          }
+
+          cardsContainer.innerHTML = topNotice + recs.map(r => `
+            <div class="card">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                <h3 style="color: var(--accent-cyan);">${escapeHtml(r.skill)}</h3>
+                <span class="match-pill medium">${r.percentage}% Job Frequency</span>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;">Appears in ${r.percentage}% of active tech postings in our verified database.</p>
+              <h4 style="font-size: 0.85rem; margin-bottom: 0.3rem;">Suggested Learning Roadmap:</h4>
+              <ul style="font-size: 0.8rem; color: var(--text-muted); padding-left: 1.2rem;">
+                ${(r.learningTopics || []).map(t => `<li>${escapeHtml(t)}</li>`).join("")}
+              </ul>
+            </div>
+          `).join("");
+        }
       }
     } catch (e) {
       console.error(e);
