@@ -615,15 +615,65 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.disabled = true;
         btn.textContent = "Analyzing JD...";
 
+        let parsedOk = false;
+        let res = null;
+
         try {
           const resp = await fetch("/api/jd/analyze", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ jdText: text, profile: candidateProfile })
           });
-          const res = await resp.json();
+          if (resp.ok) {
+            const ct = resp.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              res = await resp.json();
+              if (res.status === "success") parsedOk = true;
+            }
+          }
+        } catch (_) {}
 
-          if (res.status === "success") {
+        if (!parsedOk) {
+          // Client-side fallback for static deployments
+          const ALL_SKILLS = [
+            "Python","Java","JavaScript","TypeScript","C","C++","C#","Go","Rust","PHP","Ruby","Swift","Kotlin",
+            "HTML","CSS","React","Angular","Vue.js","Next.js","Node.js","Express","Django","Flask","FastAPI",
+            "Spring Boot","SQL","MySQL","PostgreSQL","MongoDB","Redis","Oracle","SQLite",
+            "Git","GitHub","Docker","Kubernetes","AWS","Azure","GCP","Linux","REST API","GraphQL",
+            "Data Structures","Algorithms","OOP","System Design","CI/CD","Tailwind CSS","Bootstrap",
+            "Pandas","NumPy","PyTorch","TensorFlow","Scikit-Learn","Machine Learning","AI","Data Analysis",
+            "Selenium","Playwright","Jest","JUnit","QA Testing","Postman","Android","Kotlin",
+            "Figma","Power BI","Tableau","Excel","ETL","Microservices","Firebase","Redux"
+          ];
+          
+          const jdSkills = ALL_SKILLS.filter(skill => {
+            const pattern = new RegExp("\\b" + skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+            return pattern.test(text);
+          });
+          
+          const candSkillsLower = (candidateProfile.skills || []).map(s => s.toLowerCase());
+          const matchingSkills = jdSkills.filter(s => candSkillsLower.includes(s.toLowerCase()));
+          const missingSkills = jdSkills.filter(s => !candSkillsLower.includes(s.toLowerCase()));
+          
+          let matchScore = 30;
+          if (jdSkills.length > 0) {
+            matchScore = Math.round((matchingSkills.length / jdSkills.length) * 100);
+          } else {
+            matchScore = 70; // fallback if no skills detected
+          }
+          
+          res = {
+            status: "success",
+            matchScore: matchScore,
+            explanation: { whyMatch: `Based on a basic client-side analysis, you have ${matchingSkills.length} out of ${jdSkills.length} detected skills.` },
+            matchingSkills: matchingSkills,
+            missingSkills: missingSkills,
+            interviewPrepTopics: missingSkills.map(s => `Brush up on ${s}`)
+          };
+          parsedOk = true;
+        }
+
+        if (parsedOk && res.status === "success") {
             resultBody.innerHTML = `
               <div style="margin-bottom: 1rem;">
                 <div style="font-size: 1.8rem; font-weight: 800; color: var(--accent-emerald);">${res.matchScore}% AI MATCH SCORE</div>
@@ -653,7 +703,7 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
           }
         } catch (e) {
-          alert("Error: " + e.message);
+          console.error("Error:", e.message);
         } finally {
           btn.disabled = false;
           btn.textContent = "Calculate Deterministic Match & Analyze";
@@ -666,9 +716,57 @@ document.addEventListener("DOMContentLoaded", () => {
   // SKILL GAP
   // -------------------------------------------------------------------
   async function loadSkillGap() {
-    try {
-      const resp = await fetch(`/api/skills/gap?skills=${encodeURIComponent(candidateProfile.skills.join(","))}`);
-      const res = await resp.json();
+      let parsedOk = false;
+      let res = null;
+
+      try {
+        const resp = await fetch(`/api/skills/gap?skills=${encodeURIComponent(candidateProfile.skills.join(","))}`);
+        if (resp.ok) {
+          const ct = resp.headers.get("content-type") || "";
+          if (ct.includes("application/json")) {
+            res = await resp.json();
+            parsedOk = true;
+          }
+        }
+      } catch (_) {}
+
+      if (!parsedOk) {
+        // Fallback for static hosting
+        const candSkillsLower = (candidateProfile.skills || []).map(s => s.toLowerCase());
+        const skillCounts = {};
+        let sampleSize = 0;
+        
+        allJobs.forEach(job => {
+          sampleSize++;
+          const reqSkills = job.requiredSkills || [];
+          reqSkills.forEach(s => {
+             const key = s;
+             if (!skillCounts[key]) skillCounts[key] = { count: 0, missing: !candSkillsLower.includes(key.toLowerCase()) };
+             skillCounts[key].count++;
+          });
+        });
+        
+        const sorted = Object.entries(skillCounts).map(([k, v]) => ({
+            skill: k,
+            count: v.count,
+            percentage: Math.round((v.count / Math.max(1, sampleSize)) * 100),
+            isMissing: v.missing
+        })).sort((a,b) => b.count - a.count).slice(0, 15);
+        
+        res = {
+           sampleSize: sampleSize,
+           skillFrequencies: sorted,
+           missingRecommendations: sorted.filter(s => s.isMissing).slice(0, 3).map(s => ({
+             skill: s.skill,
+             percentage: s.percentage,
+             sampleSize: sampleSize,
+             learningTopics: [`Learn basics of ${s.skill}`, `Build a project using ${s.skill}`]
+           }))
+        };
+        parsedOk = true;
+      }
+
+      if (parsedOk) {
 
       document.getElementById("lbl-skillgap-sample").textContent = res.sampleSize || 0;
 
@@ -703,6 +801,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </ul>
         </div>
       `).join("");
+      }
     } catch (e) {
       console.error(e);
     }
