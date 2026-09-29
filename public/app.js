@@ -633,11 +633,12 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.disabled = true;
         btn.textContent = "Analyzing JD...";
 
-        let parsedOk = false;
-        let res = null;
-
         try {
-          const resp = await fetch("/api/jd/analyze", {
+          let parsedOk = false;
+          let res = null;
+
+          try {
+            const resp = await fetch("/api/jd/analyze", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ jdText: text, profile: candidateProfile })
