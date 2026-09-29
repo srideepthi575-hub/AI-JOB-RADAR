@@ -735,6 +735,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // SKILL GAP
   // -------------------------------------------------------------------
   async function loadSkillGap() {
+    try {
       let parsedOk = false;
       let res = null;
 
