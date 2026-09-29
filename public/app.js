@@ -471,73 +471,127 @@ document.addEventListener("DOMContentLoaded", () => {
     const fileInput = document.getElementById("resume-file-input");
     const btnAnalyzeText = document.getElementById("btn-analyze-pasted");
     const textInput = document.getElementById("resume-text-input");
+    const btnOpenResume = document.getElementById("btn-open-resume-upload");
+
+    // Top Navbar "Upload Resume" button
+    if (btnOpenResume) {
+      btnOpenResume.addEventListener("click", () => {
+        navLinks.forEach(n => {
+          if (n.getAttribute("data-tab") === "resume-tab") {
+            n.classList.add("active");
+          } else {
+            n.classList.remove("active");
+          }
+        });
+        tabPages.forEach(p => {
+          p.style.display = p.id === "resume-tab" ? "block" : "none";
+        });
+        if (fileInput) fileInput.click();
+      });
+    }
+
+    async function handleResumeFile(file) {
+      if (!file) return;
+      if (dropzone) dropzone.innerHTML = `<p>⏳ Parsing ${escapeHtml(file.name)}...</p>`;
+
+      let parsedOk = false;
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const resp = await fetch("/api/resume/parse", { method: "POST", body: formData });
+        if (resp.ok) {
+          const ct = resp.headers.get("content-type") || "";
+          if (ct.includes("application/json")) {
+            const data = await resp.json();
+            if (data.status === "success") {
+              candidateProfile = data.profile;
+              await updateResumeFeedback();
+              renderProfileSummary();
+              renderJobsFeed();
+              alert("Resume parsed successfully!");
+              parsedOk = true;
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (!parsedOk) {
+        // Fallback: try client-side parsing
+        try {
+          if (file.name.toLowerCase().endsWith(".pdf") && window.pdfjsLib) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = "";
+            for (let i = 1; i <= pdf.numPages; i++) {
+              const page = await pdf.getPage(i);
+              const content = await page.getTextContent();
+              const pageText = content.items.map(item => item.str).join(" ");
+              fullText += pageText + "\n";
+            }
+            if (fullText.trim()) {
+              applyResumeTextClientSide(fullText, file.name);
+              parsedOk = true;
+            }
+          } else {
+            const text = await file.text();
+            if (text && text.trim().length > 50 && !text.startsWith("%PDF")) {
+              applyResumeTextClientSide(text, file.name);
+              parsedOk = true;
+            }
+          }
+        } catch (e) {
+          console.error("Client-side parse error:", e);
+        }
+      }
+
+      if (!parsedOk) {
+        alert("Could not auto-parse this file format directly in browser.\n\nPlease:\n1. Copy your resume text\n2. Paste it in the text box below\n3. Click 'Analyze Resume Text'");
+      }
+
+      if (dropzone) {
+        dropzone.innerHTML = `
+          <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
+          <p style="font-weight: 600; margin-bottom: 0.2rem;">Click or drag PDF / DOCX resume here</p>
+          <p style="font-size: 0.8rem; color: var(--text-muted);">Max file size: 10MB. Files parsed securely.</p>
+          <input type="file" id="resume-file-input" accept=".pdf,.docx,.doc" style="display: none;">
+        `;
+        const newFileInput = document.getElementById("resume-file-input");
+        if (newFileInput) {
+          newFileInput.addEventListener("change", (e) => {
+            if (e.target.files.length > 0) handleResumeFile(e.target.files[0]);
+          });
+        }
+      }
+    }
 
     if (dropzone && fileInput) {
-      dropzone.addEventListener("click", () => fileInput.click());
-      fileInput.addEventListener("change", async (e) => {
-        if (e.target.files.length > 0) {
-          const file = e.target.files[0];
-          dropzone.innerHTML = `<p>⏳ Parsing ${escapeHtml(file.name)}...</p>`;
+      dropzone.addEventListener("click", () => {
+        const fi = document.getElementById("resume-file-input") || fileInput;
+        fi.click();
+      });
 
-          let parsedOk = false;
-          try {
-            const formData = new FormData();
-            formData.append("file", file);
-            const resp = await fetch("/api/resume/parse", { method: "POST", body: formData });
-            if (resp.ok) {
-              const ct = resp.headers.get("content-type") || "";
-              if (ct.includes("application/json")) {
-                const data = await resp.json();
-                if (data.status === "success") {
-                  candidateProfile = data.profile;
-                  await updateResumeFeedback();
-                  renderProfileSummary();
-                  renderJobsFeed();
-                  alert("Resume parsed successfully!");
-                  parsedOk = true;
-                }
-              }
-            }
-          } catch (_) {}
+      fileInput.addEventListener("change", (e) => {
+        if (e.target.files.length > 0) handleResumeFile(e.target.files[0]);
+      });
 
-          if (!parsedOk) {
-            // Fallback: try client-side parsing
-            try {
-              if (file.name.toLowerCase().endsWith(".pdf") && window.pdfjsLib) {
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                let fullText = "";
-                for (let i = 1; i <= pdf.numPages; i++) {
-                  const page = await pdf.getPage(i);
-                  const content = await page.getTextContent();
-                  const pageText = content.items.map(item => item.str).join(" ");
-                  fullText += pageText + "\n";
-                }
-                if (fullText.trim()) {
-                  applyResumeTextClientSide(fullText, file.name);
-                  parsedOk = true;
-                }
-              } else {
-                const text = await file.text();
-                if (text && text.trim().length > 50 && !text.startsWith("%PDF")) {
-                  applyResumeTextClientSide(text, file.name);
-                  parsedOk = true;
-                }
-              }
-            } catch (e) {
-              console.error("Client-side parse error:", e);
-            }
-          }
+      dropzone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropzone.style.borderColor = "var(--accent-cyan)";
+        dropzone.style.background = "rgba(6, 182, 212, 0.08)";
+      });
 
-          if (!parsedOk) {
-            alert("Could not auto-parse this file on the current hosting.\n\nPlease:\n1. Copy your resume text\n2. Paste it in the text box below\n3. Click Analyze Resume");
-          }
+      dropzone.addEventListener("dragleave", (e) => {
+        e.preventDefault();
+        dropzone.style.borderColor = "var(--border-accent)";
+        dropzone.style.background = "rgba(99, 102, 241, 0.04)";
+      });
 
-          dropzone.innerHTML = `
-            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
-            <p style="font-weight: 600; margin-bottom: 0.2rem;">Click or drag PDF / DOCX resume here</p>
-            <p style="font-size: 0.8rem; color: var(--text-muted);">Max file size: 10MB.</p>
-          `;
+      dropzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropzone.style.borderColor = "var(--border-accent)";
+        dropzone.style.background = "rgba(99, 102, 241, 0.04)";
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          handleResumeFile(e.dataTransfer.files[0]);
         }
       });
     }
@@ -597,21 +651,62 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function updateResumeFeedback() {
+    let parsedOk = false;
     try {
       const resp = await fetch("/api/resume/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profile: candidateProfile })
       });
-      const data = await resp.json();
+      if (resp.ok) {
+        const ct = resp.headers.get("content-type") || "";
+        if (ct.includes("application/json")) {
+          const data = await resp.json();
+          if (data.status === "success" || data.strengths) {
+            const strList = document.getElementById("resume-strengths-list");
+            const impList = document.getElementById("resume-improvements-list");
+            if (strList) strList.innerHTML = (data.strengths || []).map(s => `<li>✓ ${escapeHtml(s)}</li>`).join("");
+            if (impList) impList.innerHTML = (data.suggestedImprovements || []).map(i => `<li>💡 ${escapeHtml(i)}</li>`).join("");
+            parsedOk = true;
+          }
+        }
+      }
+    } catch (_) {}
 
+    if (!parsedOk) {
+      // Dynamic client-side fallback feedback
       const strList = document.getElementById("resume-strengths-list");
       const impList = document.getElementById("resume-improvements-list");
+      const skills = candidateProfile.skills || [];
+      const strengths = [];
+      const improvements = [];
 
-      if (strList) strList.innerHTML = (data.strengths || []).map(s => `<li>✓ ${escapeHtml(s)}</li>`).join("");
-      if (impList) impList.innerHTML = (data.suggestedImprovements || []).map(i => `<li>💡 ${escapeHtml(i)}</li>`).join("");
-    } catch (e) {
-      console.error(e);
+      if (skills.length >= 4) {
+        strengths.push(`Strong core technical stack with ${skills.length} identified competencies (${skills.slice(0, 4).join(", ")}).`);
+      }
+      if (candidateProfile.experience === "Fresher") {
+        strengths.push("Well-suited for entry-level / fresher tech recruitment drives and internships in India.");
+      }
+      if (skills.some(s => ["Python", "Java", "C++"].includes(s))) {
+        strengths.push("Has strong backend/systems language foundation.");
+      }
+      if (skills.some(s => ["React", "JavaScript", "HTML", "CSS"].includes(s))) {
+        strengths.push("Demonstrates frontend web development readiness.");
+      }
+      if (strengths.length === 0) {
+        strengths.push("Resume parsed with candidate credentials and basic technical keywords.");
+      }
+
+      if (!skills.some(s => ["Docker", "Kubernetes", "AWS", "CI/CD"].includes(s))) {
+        improvements.push("Add Cloud/DevOps basics (e.g. Docker, AWS, GitHub Actions) to significantly boost shortlisting.");
+      }
+      if (!skills.some(s => ["PostgreSQL", "MongoDB", "SQL"].includes(s))) {
+        improvements.push("Highlight database proficiency (SQL, PostgreSQL, MongoDB) with project context.");
+      }
+      improvements.push("Quantify project impacts (e.g. 'Improved latency by 20%', 'Built for 500+ users') for higher recruiter conversion.");
+
+      if (strList) strList.innerHTML = strengths.map(s => `<li>✓ ${escapeHtml(s)}</li>`).join("");
+      if (impList) impList.innerHTML = improvements.map(i => `<li>💡 ${escapeHtml(i)}</li>`).join("");
     }
   }
 
@@ -1170,8 +1265,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     renderProfileSummary();
     renderJobsFeed();
+    updateResumeFeedback();
 
-    alert(`✅ Resume analyzed from ${filename}!\n\nFound ${foundSkills.length} skills: ${foundSkills.slice(0,8).join(", ")}${foundSkills.length > 8 ? "..." : ""}\n\nJob recommendations updated!`);
+    alert(`✅ Resume analyzed from ${filename}!\n\nFound ${foundSkills.length} skills: ${foundSkills.slice(0,8).join(", ")}${foundSkills.length > 8 ? "..." : ""}\n\nJob recommendations and feedback updated!`);
   }
 });
 
