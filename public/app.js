@@ -485,6 +485,17 @@ document.addEventListener("DOMContentLoaded", () => {
           dropzone.innerHTML = `<p>⏳ Parsing ${escapeHtml(file.name)}...</p>`;
           try {
             const resp = await fetch("/api/resume/parse", { method: "POST", body: formData });
+            const contentType = resp.headers.get("content-type") || "";
+            if (!contentType.includes("application/json")) {
+              // Backend unavailable — fallback to client-side text extraction
+              const text = await file.text().catch(() => "");
+              if (text.trim()) {
+                applyResumeTextClientSide(text, file.name);
+              } else {
+                alert("Resume upload requires a running backend. Please paste your resume text in the text box below instead.");
+              }
+              return;
+            }
             const data = await resp.json();
             if (data.status === "success") {
               candidateProfile = data.profile;
@@ -492,6 +503,8 @@ document.addEventListener("DOMContentLoaded", () => {
               renderProfileSummary();
               renderJobsFeed();
               alert("Resume parsed successfully!");
+            } else {
+              alert("Could not parse resume: " + (data.message || "Unknown error"));
             }
           } catch (err) {
             alert("Error parsing resume: " + err.message);
@@ -517,6 +530,12 @@ document.addEventListener("DOMContentLoaded", () => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text: text })
           });
+          const contentType = resp.headers.get("content-type") || "";
+          if (!contentType.includes("application/json")) {
+            // Backend unavailable — parse client-side
+            applyResumeTextClientSide(text, "pasted text");
+            return;
+          }
           const data = await resp.json();
           if (data.status === "success") {
             candidateProfile = data.profile;
@@ -524,9 +543,12 @@ document.addEventListener("DOMContentLoaded", () => {
             renderProfileSummary();
             renderJobsFeed();
             alert("Resume text analyzed!");
+          } else {
+            alert("Could not analyze text: " + (data.message || "Unknown error"));
           }
         } catch (err) {
-          alert("Error: " + err.message);
+          // Fallback: parse client-side
+          applyResumeTextClientSide(text, "pasted text");
         }
       });
     }
@@ -772,4 +794,73 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!str) return "";
     return str.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
+
+  // Client-side resume text parser (runs in browser when backend unavailable)
+  function applyResumeTextClientSide(text, filename) {
+    const ALL_SKILLS = [
+      "Python","Java","JavaScript","TypeScript","C","C++","C#","Go","Rust","PHP","Ruby","Swift","Kotlin",
+      "HTML","CSS","React","Angular","Vue.js","Next.js","Node.js","Express","Django","Flask","FastAPI",
+      "Spring Boot","SQL","MySQL","PostgreSQL","MongoDB","Redis","Oracle","SQLite",
+      "Git","GitHub","Docker","Kubernetes","AWS","Azure","GCP","Linux","REST API","GraphQL",
+      "Data Structures","Algorithms","OOP","System Design","CI/CD","Tailwind CSS","Bootstrap",
+      "Pandas","NumPy","PyTorch","TensorFlow","Scikit-Learn","Machine Learning","AI","Data Analysis",
+      "Selenium","Playwright","Jest","JUnit","QA Testing","Postman","Android","Kotlin",
+      "Figma","Power BI","Tableau","Excel","ETL","Microservices","Firebase","Redux"
+    ];
+
+    const textLower = text.toLowerCase();
+
+    // Extract skills
+    const foundSkills = ALL_SKILLS.filter(skill => {
+      const pattern = new RegExp("\\b" + skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+      return pattern.test(text);
+    });
+
+    // Extract name (first line likely)
+    const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    const name = lines[0] || "Candidate";
+
+    // Extract graduation year
+    const yearMatch = text.match(/20(2[0-9]|1[6-9])/);
+    const gradYear = yearMatch ? yearMatch[0] : "2026";
+
+    // Detect experience level
+    const isFresher = /fresher|fresh graduate|0[\s-]*year|entry.level|final.year/i.test(text);
+    const experience = isFresher ? "Fresher" : "0–2 years";
+
+    // Detect degree
+    const degree = /b\.?tech|be\b|bachelor/i.test(text) ? "B.Tech CSE"
+      : /m\.?tech|me\b|master/i.test(text) ? "M.Tech CSE"
+      : /mca\b/i.test(text) ? "MCA"
+      : /bca\b/i.test(text) ? "BCA"
+      : "B.Tech CSE";
+
+    // Preferred roles based on skills found
+    const prefRoles = [];
+    if (foundSkills.some(s => ["React","Vue.js","Angular","Next.js","HTML","CSS"].includes(s))) prefRoles.push("Frontend Developer");
+    if (foundSkills.some(s => ["Django","Flask","Spring Boot","Node.js","FastAPI"].includes(s))) prefRoles.push("Backend Developer");
+    if (foundSkills.some(s => ["Machine Learning","TensorFlow","PyTorch","Scikit-Learn"].includes(s))) prefRoles.push("Machine Learning Engineer");
+    if (foundSkills.some(s => ["Pandas","Data Analysis","SQL","Power BI","Tableau"].includes(s))) prefRoles.push("Data Analyst");
+    if (foundSkills.some(s => ["Docker","Kubernetes","AWS","CI/CD","Linux"].includes(s))) prefRoles.push("DevOps Engineer");
+    if (prefRoles.length === 0) prefRoles.push("Software Developer");
+
+    candidateProfile = {
+      name,
+      degree,
+      branch: "Computer Science",
+      graduationYear: gradYear,
+      experience,
+      skills: foundSkills.length > 0 ? foundSkills : ["Python", "JavaScript", "SQL", "Git"],
+      projects: [],
+      preferredRoles: prefRoles,
+      preferredLocations: ["Bengaluru", "Chennai", "Hyderabad", "Remote"],
+      preferredWorkMode: "Any"
+    };
+
+    renderProfileSummary();
+    renderJobsFeed();
+
+    alert(`✅ Resume analyzed from ${filename}!\n\nFound ${foundSkills.length} skills: ${foundSkills.slice(0,8).join(", ")}${foundSkills.length > 8 ? "..." : ""}\n\nJob recommendations updated!`);
+  }
 });
+
