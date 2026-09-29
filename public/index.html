@@ -283,18 +283,25 @@
       <!-- ==================================================================== -->
       <section id="insights-tab" class="tab-page" style="display: none;">
         <div class="page-header">
-          <h1 class="page-title">CSE & IT Career Insights</h1>
-          <p class="page-subtitle">Dynamic data insights calculated strictly from verified active tech job postings in India.</p>
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h1 class="page-title">CSE & IT Career Insights</h1>
+              <p class="page-subtitle">Dynamic data insights calculated strictly from verified active tech job postings in India.</p>
+            </div>
+            <span style="font-size: 0.85rem; color: var(--text-muted); background: var(--bg-card); padding: 0.4rem 0.8rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+              Based on <strong id="lbl-insights-sample" style="color: var(--accent-cyan);">0</strong> live verified jobs
+            </span>
+          </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem;">
           <div class="card">
             <h4 style="color: var(--accent-cyan); margin-bottom: 0.75rem;">🔥 Top Demanded Skills</h4>
             <div id="insight-top-skills"><!-- Rendered dynamically --></div>
           </div>
 
           <div class="card">
-            <h4 style="color: var(--accent-indigo); margin-bottom: 0.75rem;">💼 Top Fresher Tech Roles</h4>
+            <h4 style="color: var(--accent-indigo); margin-bottom: 0.75rem;">💼 Top Tech Roles & Demand</h4>
             <div id="insight-top-roles"><!-- Rendered dynamically --></div>
           </div>
 
@@ -304,8 +311,20 @@
           </div>
 
           <div class="card">
-            <h4 style="color: var(--accent-amber); margin-bottom: 0.75rem;">🏢 Top Posting Companies</h4>
+            <h4 style="color: var(--accent-amber); margin-bottom: 0.75rem;">🏢 Top Hiring Companies</h4>
             <div id="insight-top-companies"><!-- Rendered dynamically --></div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem;">
+          <div class="card">
+            <h4 style="color: var(--accent-rose); margin-bottom: 0.75rem;">🎓 Experience & Fresher-Friendliness</h4>
+            <div id="insight-fresher-trends"><!-- Rendered dynamically --></div>
+          </div>
+
+          <div class="card">
+            <h4 style="color: var(--accent-cyan); margin-bottom: 0.75rem;">🌐 Work Mode & Workplace Trends</h4>
+            <div id="insight-work-modes"><!-- Rendered dynamically --></div>
           </div>
         </div>
       </section>

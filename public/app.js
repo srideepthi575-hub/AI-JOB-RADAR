@@ -65,7 +65,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (targetTab === "skillgap-tab") loadSkillGap();
         if (targetTab === "insights-tab") loadInsights();
         if (targetTab === "saved-tab") renderSavedJobs();
-        if (targetTab === "health-tab") loadSourceHealth();
       });
     });
 
@@ -831,40 +830,258 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------------
   async function loadInsights() {
     try {
-      const resp = await fetch("/api/insights");
-      const res = await resp.json();
+      let data = null;
 
-      if (res.status === "success") {
-        document.getElementById("insight-top-skills").innerHTML = (res.topSkills || []).map(s => `
-          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color);">
-            <span>${escapeHtml(s.name)}</span>
-            <strong style="color: var(--accent-cyan);">${s.count} jobs (${s.percentage}%)</strong>
-          </div>
-        `).join("");
+      // Try server API first if available
+      try {
+        const resp = await fetch("/api/insights");
+        if (resp.ok) {
+          const ct = resp.headers.get("content-type") || "";
+          if (ct.includes("application/json")) {
+            const json = await resp.json();
+            if (json.status === "success" && json.topSkills && json.topSkills.length > 0) {
+              data = json;
+            }
+          }
+        }
+      } catch (_) {}
 
-        document.getElementById("insight-top-roles").innerHTML = (res.topRoles || []).map(r => `
-          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color);">
-            <span>${escapeHtml(r.name)}</span>
-            <strong>${r.count} postings</strong>
-          </div>
-        `).join("");
+      // If server API not available (e.g. static hosting / Vercel), calculate directly from allJobs
+      if (!data) {
+        const sampleSize = allJobs.length;
+        if (sampleSize === 0) return;
 
-        document.getElementById("insight-top-locations").innerHTML = (res.topLocations || []).map(l => `
-          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color);">
-            <span>${escapeHtml(l.name)}</span>
-            <strong>${l.count} jobs</strong>
-          </div>
-        `).join("");
+        const skillMap = {};
+        const roleMap = {};
+        const locMap = {};
+        const compMap = {};
+        const expMap = {
+          "Fresher / Entry-Level (0–2 YOE)": 0,
+          "Internships & Trainees": 0,
+          "Mid / Senior Roles (2+ YOE)": 0
+        };
+        const modeMap = {
+          "Remote (Work from Home)": 0,
+          "Hybrid (Flexible)": 0,
+          "On-site / In-Office": 0
+        };
 
-        document.getElementById("insight-top-companies").innerHTML = (res.topCompanies || []).map(c => `
-          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color);">
-            <span>${escapeHtml(c.name)}</span>
-            <strong>${c.count} listings</strong>
+        allJobs.forEach(job => {
+          // Skills
+          const skills = [...(job.requiredSkills || []), ...(job.preferredSkills || [])];
+          const uniqueSkills = [...new Set(skills)];
+          uniqueSkills.forEach(s => {
+            if (s && s.trim()) {
+              const name = s.trim();
+              skillMap[name] = (skillMap[name] || 0) + 1;
+            }
+          });
+
+          // Role Categorization
+          const title = (job.title || "").toLowerCase();
+          let normalizedRole = "Software Engineer";
+          if (title.includes("frontend") || title.includes("react") || title.includes("angular") || title.includes("vue") || title.includes("ui developer")) {
+            normalizedRole = "Frontend Developer";
+          } else if (title.includes("backend") || title.includes("node") || title.includes("django") || title.includes("spring") || title.includes("fastapi")) {
+            normalizedRole = "Backend Developer";
+          } else if (title.includes("full stack") || title.includes("fullstack")) {
+            normalizedRole = "Full Stack Engineer";
+          } else if (title.includes("python")) {
+            normalizedRole = "Python Developer";
+          } else if (title.includes("data") || title.includes("analytics") || title.includes("analyst") || title.includes("bi ")) {
+            normalizedRole = "Data Analyst / Engineer";
+          } else if (title.includes("qa") || title.includes("test") || title.includes("quality") || title.includes("automation")) {
+            normalizedRole = "QA / Automation Engineer";
+          } else if (title.includes("devops") || title.includes("cloud") || title.includes("aws") || title.includes("infra")) {
+            normalizedRole = "DevOps & Cloud Engineer";
+          } else if (title.includes("intern")) {
+            normalizedRole = "Software Intern / Trainee";
+          } else if (title.includes("java")) {
+            normalizedRole = "Java Developer";
+          } else if (title.includes("ai") || title.includes("ml") || title.includes("machine learning")) {
+            normalizedRole = "AI / ML Engineer";
+          } else if (job.title) {
+            normalizedRole = job.title;
+          }
+          roleMap[normalizedRole] = (roleMap[normalizedRole] || 0) + 1;
+
+          // Locations
+          const rawLoc = (job.location || "India").toUpperCase();
+          let normalizedLoc = "Other Indian Cities";
+          if (rawLoc.includes("BENGALURU") || rawLoc.includes("BANGALORE") || rawLoc.includes("KA,")) {
+            normalizedLoc = "Bengaluru (KA)";
+          } else if (rawLoc.includes("HYDERABAD") || rawLoc.includes("TS,") || rawLoc.includes("TELANGANA") || rawLoc.includes("AP,")) {
+            normalizedLoc = "Hyderabad (TS)";
+          } else if (rawLoc.includes("PUNE")) {
+            normalizedLoc = "Pune (MH)";
+          } else if (rawLoc.includes("MUMBAI") || rawLoc.includes("MH,")) {
+            normalizedLoc = "Mumbai (MH)";
+          } else if (rawLoc.includes("CHENNAI") || rawLoc.includes("TN,") || rawLoc.includes("TAMIL")) {
+            normalizedLoc = "Chennai (TN)";
+          } else if (rawLoc.includes("NOIDA") || rawLoc.includes("GURUGRAM") || rawLoc.includes("GURGAON") || rawLoc.includes("DELHI") || rawLoc.includes("NCR") || rawLoc.includes("UP,")) {
+            normalizedLoc = "Delhi NCR / Noida";
+          } else if (rawLoc.includes("REMOTE") || (job.workMode || "").toLowerCase().includes("remote")) {
+            normalizedLoc = "Remote (Pan-India)";
+          } else if (job.location) {
+            normalizedLoc = job.location.replace(/,\s*IN$/i, "").replace(/,\s*India$/i, "");
+          }
+          locMap[normalizedLoc] = (locMap[normalizedLoc] || 0) + 1;
+
+          // Companies
+          let comp = job.company || "Verified Tech Employer";
+          if (comp.includes("|")) comp = comp.split("|")[0].trim();
+          compMap[comp] = (compMap[comp] || 0) + 1;
+
+          // Experience
+          const exp = (job.experienceRequirement || "").toLowerCase();
+          const jType = (job.jobType || "").toLowerCase();
+          if (jType.includes("intern") || exp.includes("intern")) {
+            expMap["Internships & Trainees"]++;
+          } else if (exp.includes("0-2") || exp.includes("0–2") || exp.includes("fresher") || exp.includes("0 year") || exp.includes("1 year") || exp.includes("entry")) {
+            expMap["Fresher / Entry-Level (0–2 YOE)"]++;
+          } else {
+            expMap["Mid / Senior Roles (2+ YOE)"]++;
+          }
+
+          // Work Mode
+          const mode = (job.workMode || "").toLowerCase();
+          if (mode.includes("remote")) {
+            modeMap["Remote (Work from Home)"]++;
+          } else if (mode.includes("hybrid")) {
+            modeMap["Hybrid (Flexible)"]++;
+          } else {
+            modeMap["On-site / In-Office"]++;
+          }
+        });
+
+        const topSkills = Object.entries(skillMap)
+          .map(([name, count]) => ({ name, count, percentage: Math.round((count / sampleSize) * 100) }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10);
+
+        const topRoles = Object.entries(roleMap)
+          .map(([name, count]) => ({ name, count, percentage: Math.round((count / sampleSize) * 100) }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 8);
+
+        const topLocations = Object.entries(locMap)
+          .map(([name, count]) => ({ name, count, percentage: Math.round((count / sampleSize) * 100) }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 8);
+
+        const topCompanies = Object.entries(compMap)
+          .map(([name, count]) => ({ name, count, percentage: Math.round((count / sampleSize) * 100) }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 8);
+
+        const fresherTrends = Object.entries(expMap)
+          .map(([name, count]) => ({ name, count, percentage: Math.round((count / sampleSize) * 100) }));
+
+        const workModes = Object.entries(modeMap)
+          .map(([name, count]) => ({ name, count, percentage: Math.round((count / sampleSize) * 100) }));
+
+        data = {
+          sampleSize,
+          topSkills,
+          topRoles,
+          topLocations,
+          topCompanies,
+          fresherTrends,
+          workModes
+        };
+      }
+
+      // Render into DOM
+      const lblSample = document.getElementById("lbl-insights-sample");
+      if (lblSample) lblSample.textContent = (data.sampleSize || allJobs.length) + " Jobs Analyzed";
+
+      const skillsEl = document.getElementById("insight-top-skills");
+      if (skillsEl) {
+        skillsEl.innerHTML = (data.topSkills || []).map(s => `
+          <div style="margin-bottom: 0.6rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.2rem;">
+              <span style="font-weight: 500;">${escapeHtml(s.name)}</span>
+              <strong style="color: var(--accent-cyan); font-size: 0.8rem;">${s.count} jobs (${s.percentage}%)</strong>
+            </div>
+            <div style="height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;">
+              <div style="height: 100%; width: ${Math.min(100, Math.max(6, s.percentage))}%; background: var(--accent-cyan); border-radius: 3px;"></div>
+            </div>
           </div>
         `).join("");
       }
+
+      const rolesEl = document.getElementById("insight-top-roles");
+      if (rolesEl) {
+        rolesEl.innerHTML = (data.topRoles || []).map(r => `
+          <div style="margin-bottom: 0.6rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.2rem;">
+              <span style="font-weight: 500;">${escapeHtml(r.name)}</span>
+              <strong style="color: var(--accent-indigo); font-size: 0.8rem;">${r.count} postings (${r.percentage || Math.round((r.count/data.sampleSize)*100)}%)</strong>
+            </div>
+            <div style="height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;">
+              <div style="height: 100%; width: ${Math.min(100, Math.max(6, r.percentage || Math.round((r.count/data.sampleSize)*100)))}%; background: var(--accent-indigo); border-radius: 3px;"></div>
+            </div>
+          </div>
+        `).join("");
+      }
+
+      const locsEl = document.getElementById("insight-top-locations");
+      if (locsEl) {
+        locsEl.innerHTML = (data.topLocations || []).map(l => `
+          <div style="margin-bottom: 0.6rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.2rem;">
+              <span style="font-weight: 500;">📍 ${escapeHtml(l.name)}</span>
+              <strong style="color: var(--accent-emerald); font-size: 0.8rem;">${l.count} jobs (${l.percentage || Math.round((l.count/data.sampleSize)*100)}%)</strong>
+            </div>
+            <div style="height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;">
+              <div style="height: 100%; width: ${Math.min(100, Math.max(6, l.percentage || Math.round((l.count/data.sampleSize)*100)))}%; background: var(--accent-emerald); border-radius: 3px;"></div>
+            </div>
+          </div>
+        `).join("");
+      }
+
+      const compsEl = document.getElementById("insight-top-companies");
+      if (compsEl) {
+        compsEl.innerHTML = (data.topCompanies || []).map(c => `
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border-color);">
+            <span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;">🏢 ${escapeHtml(c.name)}</span>
+            <span class="match-pill high" style="font-size: 0.75rem; padding: 0.15rem 0.5rem;">${c.count} open roles</span>
+          </div>
+        `).join("");
+      }
+
+      const fresherEl = document.getElementById("insight-fresher-trends");
+      if (fresherEl) {
+        fresherEl.innerHTML = (data.fresherTrends || []).map(f => `
+          <div style="margin-bottom: 0.75rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+              <span style="font-weight: 500;">${escapeHtml(f.name)}</span>
+              <strong style="color: var(--accent-rose);">${f.count} jobs (${f.percentage}%)</strong>
+            </div>
+            <div style="height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;">
+              <div style="height: 100%; width: ${Math.min(100, Math.max(5, f.percentage))}%; background: var(--accent-rose); border-radius: 3px;"></div>
+            </div>
+          </div>
+        `).join("");
+      }
+
+      const modesEl = document.getElementById("insight-work-modes");
+      if (modesEl) {
+        modesEl.innerHTML = (data.workModes || []).map(w => `
+          <div style="margin-bottom: 0.75rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+              <span style="font-weight: 500;">💼 ${escapeHtml(w.name)}</span>
+              <strong style="color: var(--accent-cyan);">${w.count} jobs (${w.percentage}%)</strong>
+            </div>
+            <div style="height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;">
+              <div style="height: 100%; width: ${Math.min(100, Math.max(5, w.percentage))}%; background: var(--accent-cyan); border-radius: 3px;"></div>
+            </div>
+          </div>
+        `).join("");
+      }
+
     } catch (e) {
-      console.error(e);
+      console.error("Error loading insights:", e);
     }
   }
 

@@ -375,34 +375,98 @@ def get_insights():
     skill_counts = {}
     role_counts = {}
     location_counts = {}
-    work_mode_counts = {"Remote": 0, "Hybrid": 0, "On-site": 0, "Not specified": 0}
+    work_mode_counts = {"Remote (Work from Home)": 0, "Hybrid (Flexible)": 0, "On-site / In-Office": 0}
     company_counts = {}
+    exp_counts = {
+        "Fresher / Entry-Level (0–2 YOE)": 0,
+        "Internships & Trainees": 0,
+        "Mid / Senior Roles (2+ YOE)": 0
+    }
 
     for j in jobs:
         # Skills
-        for s in j.get("requiredSkills", []):
-            skill_counts[s] = skill_counts.get(s, 0) + 1
+        for s in (j.get("requiredSkills", []) or []) + (j.get("preferredSkills", []) or []):
+            if s and str(s).strip():
+                skill = str(s).strip()
+                skill_counts[skill] = skill_counts.get(skill, 0) + 1
         
-        # Roles
-        title = j.get("title", "Software Developer")
-        role_counts[title] = role_counts.get(title, 0) + 1
+        # Roles normalization
+        title = (j.get("title") or "").lower()
+        if any(w in title for w in ["frontend", "react", "angular", "vue", "ui developer"]):
+            role = "Frontend Developer"
+        elif any(w in title for w in ["backend", "node", "django", "spring", "fastapi"]):
+            role = "Backend Developer"
+        elif "full stack" in title or "fullstack" in title:
+            role = "Full Stack Engineer"
+        elif "python" in title:
+            role = "Python Developer"
+        elif any(w in title for w in ["data", "analytics", "analyst", "bi "]):
+            role = "Data Analyst / Engineer"
+        elif any(w in title for w in ["qa", "test", "quality", "automation"]):
+            role = "QA / Automation Engineer"
+        elif any(w in title for w in ["devops", "cloud", "aws", "infra"]):
+            role = "DevOps & Cloud Engineer"
+        elif "intern" in title:
+            role = "Software Intern / Trainee"
+        elif "java" in title:
+            role = "Java Developer"
+        elif any(w in title for w in ["ai", "ml", "machine learning"]):
+            role = "AI / ML Engineer"
+        else:
+            role = j.get("title", "Software Engineer")
+        role_counts[role] = role_counts.get(role, 0) + 1
 
-        # Location
-        loc = j.get("location", "India")
+        # Location normalization
+        loc_raw = (j.get("location") or "India").upper()
+        if "BENGALURU" in loc_raw or "BANGALORE" in loc_raw or "KA," in loc_raw:
+            loc = "Bengaluru (KA)"
+        elif "HYDERABAD" in loc_raw or "TS," in loc_raw or "TELANGANA" in loc_raw or "AP," in loc_raw:
+            loc = "Hyderabad (TS)"
+        elif "PUNE" in loc_raw:
+            loc = "Pune (MH)"
+        elif "MUMBAI" in loc_raw or "MH," in loc_raw:
+            loc = "Mumbai (MH)"
+        elif "CHENNAI" in loc_raw or "TN," in loc_raw:
+            loc = "Chennai (TN)"
+        elif any(w in loc_raw for w in ["NOIDA", "GURUGRAM", "GURGAON", "DELHI", "NCR", "UP,"]):
+            loc = "Delhi NCR / Noida"
+        elif "REMOTE" in loc_raw:
+            loc = "Remote (Pan-India)"
+        else:
+            loc = j.get("location", "Other Indian Cities").replace(", IN", "").replace(", India", "")
         location_counts[loc] = location_counts.get(loc, 0) + 1
 
         # Work Mode
-        mode = j.get("workMode", "Not specified")
-        work_mode_counts[mode] = work_mode_counts.get(mode, 0) + 1
+        mode = (j.get("workMode") or "").lower()
+        if "remote" in mode:
+            work_mode_counts["Remote (Work from Home)"] += 1
+        elif "hybrid" in mode:
+            work_mode_counts["Hybrid (Flexible)"] += 1
+        else:
+            work_mode_counts["On-site / In-Office"] += 1
 
         # Company
-        comp = j.get("company", "Company")
+        comp = j.get("company", "Verified Tech Employer")
+        if "|" in comp:
+            comp = comp.split("|")[0].strip()
         company_counts[comp] = company_counts.get(comp, 0) + 1
 
+        # Experience
+        exp = (j.get("experienceRequirement") or "").lower()
+        jtype = (j.get("jobType") or "").lower()
+        if "intern" in jtype or "intern" in exp:
+            exp_counts["Internships & Trainees"] += 1
+        elif any(w in exp for w in ["0-2", "0–2", "fresher", "0 year", "1 year", "entry"]):
+            exp_counts["Fresher / Entry-Level (0–2 YOE)"] += 1
+        else:
+            exp_counts["Mid / Senior Roles (2+ YOE)"] += 1
+
     top_skills = [{"name": k, "count": v, "percentage": round((v/total_jobs)*100)} for k, v in sorted(skill_counts.items(), key=lambda x: x[1], reverse=True)[:10]]
-    top_roles = [{"name": k, "count": v} for k, v in sorted(role_counts.items(), key=lambda x: x[1], reverse=True)[:8]]
-    top_locations = [{"name": k, "count": v} for k, v in sorted(location_counts.items(), key=lambda x: x[1], reverse=True)[:8]]
-    top_companies = [{"name": k, "count": v} for k, v in sorted(company_counts.items(), key=lambda x: x[1], reverse=True)[:8]]
+    top_roles = [{"name": k, "count": v, "percentage": round((v/total_jobs)*100)} for k, v in sorted(role_counts.items(), key=lambda x: x[1], reverse=True)[:8]]
+    top_locations = [{"name": k, "count": v, "percentage": round((v/total_jobs)*100)} for k, v in sorted(location_counts.items(), key=lambda x: x[1], reverse=True)[:8]]
+    top_companies = [{"name": k, "count": v, "percentage": round((v/total_jobs)*100)} for k, v in sorted(company_counts.items(), key=lambda x: x[1], reverse=True)[:8]]
+    fresher_trends = [{"name": k, "count": v, "percentage": round((v/total_jobs)*100)} for k, v in exp_counts.items()]
+    work_modes = [{"name": k, "count": v, "percentage": round((v/total_jobs)*100)} for k, v in work_mode_counts.items()]
 
     return jsonify({
         "status": "success",
@@ -411,8 +475,9 @@ def get_insights():
         "topSkills": top_skills,
         "topRoles": top_roles,
         "topLocations": top_locations,
-        "workModes": work_mode_counts,
-        "topCompanies": top_companies
+        "workModes": work_modes,
+        "topCompanies": top_companies,
+        "fresherTrends": fresher_trends
     })
 
 if __name__ == "__main__":
