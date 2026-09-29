@@ -96,12 +96,16 @@ document.addEventListener("DOMContentLoaded", () => {
         btnManualRefresh.innerHTML = "<span>🔄</span> Refreshing...";
         try {
           const resp = await fetch("/api/crawl", { method: "POST" });
-          const res = await resp.json();
-          alert(res.message);
+          if (resp.ok) {
+            const ct = resp.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              const res = await resp.json();
+              if (res.message) alert(res.message);
+            }
+          }
           await loadJobs();
-          await loadSourceHealth();
         } catch (err) {
-          alert("Refresh trigger error: " + err.message);
+          console.error(err);
         } finally {
           btnManualRefresh.disabled = false;
           btnManualRefresh.innerHTML = "<span>🔄</span> Refresh Jobs";
@@ -486,13 +490,19 @@ document.addEventListener("DOMContentLoaded", () => {
         tabPages.forEach(p => {
           p.style.display = p.id === "resume-tab" ? "block" : "none";
         });
-        if (fileInput) fileInput.click();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+
+        const fi = document.getElementById("resume-file-input") || fileInput;
+        if (fi) {
+          fi.value = "";
+          fi.click();
+        }
       });
     }
 
     async function handleResumeFile(file) {
       if (!file) return;
-      if (dropzone) dropzone.innerHTML = `<p>⏳ Parsing ${escapeHtml(file.name)}...</p>`;
+      if (dropzone) dropzone.innerHTML = `<p style="color:var(--accent-cyan);font-weight:600;">⏳ Parsing ${escapeHtml(file.name)}...</p>`;
 
       let parsedOk = false;
       try {
@@ -508,7 +518,7 @@ document.addEventListener("DOMContentLoaded", () => {
               await updateResumeFeedback();
               renderProfileSummary();
               renderJobsFeed();
-              alert("Resume parsed successfully!");
+              alert("✅ Resume parsed successfully from " + file.name + "!");
               parsedOk = true;
             }
           }
@@ -516,25 +526,47 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch (_) {}
 
       if (!parsedOk) {
-        // Fallback: try client-side parsing
+        // Fallback: client-side parsing
         try {
-          if (file.name.toLowerCase().endsWith(".pdf") && window.pdfjsLib) {
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            let fullText = "";
-            for (let i = 1; i <= pdf.numPages; i++) {
-              const page = await pdf.getPage(i);
-              const content = await page.getTextContent();
-              const pageText = content.items.map(item => item.str).join(" ");
-              fullText += pageText + "\n";
+          const fname = (file.name || "").toLowerCase();
+          const arrayBuffer = await file.arrayBuffer();
+
+          if (fname.endsWith(".pdf") && window.pdfjsLib) {
+            try {
+              const typedarray = new Uint8Array(arrayBuffer);
+              const loadingTask = window.pdfjsLib.getDocument({ data: typedarray });
+              const pdf = await loadingTask.promise;
+              let fullText = "";
+              for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                const pageText = (content.items || []).map(item => item.str).join(" ");
+                fullText += pageText + "\n";
+              }
+              if (fullText.trim().length > 10) {
+                applyResumeTextClientSide(fullText, file.name);
+                parsedOk = true;
+              }
+            } catch (pdfErr) {
+              console.error("PDF.js direct parse failed:", pdfErr);
             }
-            if (fullText.trim()) {
-              applyResumeTextClientSide(fullText, file.name);
-              parsedOk = true;
+          }
+
+          if (!parsedOk && (fname.endsWith(".docx") || fname.endsWith(".doc")) && window.mammoth) {
+            try {
+              const res = await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+              if (res && res.value && res.value.trim().length > 10) {
+                applyResumeTextClientSide(res.value, file.name);
+                parsedOk = true;
+              }
+            } catch (docErr) {
+              console.error("Mammoth DOCX parse failed:", docErr);
             }
-          } else {
+          }
+
+          if (!parsedOk) {
             const text = await file.text();
-            if (text && text.trim().length > 50 && !text.startsWith("%PDF")) {
+            if (text && text.trim().length > 30 && !text.startsWith("%PDF")) {
               applyResumeTextClientSide(text, file.name);
               parsedOk = true;
             }
@@ -545,7 +577,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (!parsedOk) {
-        alert("Could not auto-parse this file format directly in browser.\n\nPlease:\n1. Copy your resume text\n2. Paste it in the text box below\n3. Click 'Analyze Resume Text'");
+        alert("Could not extract readable text from this file.\n\nPlease:\n1. Open your resume\n2. Copy the text\n3. Paste into the 'Paste Resume Plain Text' box below\n4. Click 'Analyze Resume Text'");
       }
 
       if (dropzone) {
@@ -553,7 +585,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
           <p style="font-weight: 600; margin-bottom: 0.2rem;">Click or drag PDF / DOCX resume here</p>
           <p style="font-size: 0.8rem; color: var(--text-muted);">Max file size: 10MB. Files parsed securely.</p>
-          <input type="file" id="resume-file-input" accept=".pdf,.docx,.doc" style="display: none;">
+          <input type="file" id="resume-file-input" accept=".pdf,.docx,.doc,.txt" style="display: none;">
         `;
         const newFileInput = document.getElementById("resume-file-input");
         if (newFileInput) {
@@ -567,7 +599,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (dropzone && fileInput) {
       dropzone.addEventListener("click", () => {
         const fi = document.getElementById("resume-file-input") || fileInput;
-        fi.click();
+        if (fi) {
+          fi.value = "";
+          fi.click();
+        }
       });
 
       fileInput.addEventListener("change", (e) => {
