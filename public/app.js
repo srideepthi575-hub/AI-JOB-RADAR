@@ -45,7 +45,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initResumeDropzone();
   initJdMatcher();
   loadJobs();
-  loadSourceHealth();
 
   // -------------------------------------------------------------------
   // NAVIGATION
@@ -881,38 +880,6 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       container.innerHTML = savedJobs.map(j => renderJobCard(j)).join("");
       attachCardListeners();
-    }
-  }
-
-  // -------------------------------------------------------------------
-  // SOURCE HEALTH
-  // -------------------------------------------------------------------
-  async function loadSourceHealth() {
-    try {
-      const resp = await fetch("/api/crawler/status");
-      const data = await resp.json();
-      const sources = data.sources || [];
-      const tbody = document.getElementById("health-table-body");
-
-      if (tbody) {
-        tbody.innerHTML = sources.map(s => `
-          <tr style="border-bottom: 1px solid var(--border-color);">
-            <td style="padding: 0.75rem;"><strong>${escapeHtml(s.source)}</strong></td>
-            <td style="padding: 0.75rem;">
-              <span style="color: ${s.enabled && !s.error ? 'var(--accent-emerald)' : 'var(--accent-rose)'}">
-                ${s.enabled && !s.error ? '● Active' : '● Degraded / Unconfigured'}
-              </span>
-            </td>
-            <td style="padding: 0.75rem;">${s.fetched}</td>
-            <td style="padding: 0.75rem;">${s.valid}</td>
-            <td style="padding: 0.75rem;">${s.duplicates}</td>
-            <td style="padding: 0.75rem;">${s.lastFetch || 'N/A'}</td>
-            <td style="padding: 0.75rem; color: var(--text-muted);">${escapeHtml(s.error || 'None')}</td>
-          </tr>
-        `).join("");
-      }
-    } catch (e) {
-      console.error(e);
     }
   }
 
